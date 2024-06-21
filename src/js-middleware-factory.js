@@ -1,64 +1,67 @@
-import {
-  assert,
-  isFunction,
-  isPromise,
-  isNotBlank,
-  isNotEmptyObject
-} from './js-utils'
-
-import { createHandler } from './js-handler-factory'
+import { assert, hasValue, toArray, isArray, isFunction, isPromise, isNotBlank} from './js-utils'
+import { createProperty } from './js-property-factory'
 
 export default class MiddlewareFactory {
 
-  constructor(opt = {}) {
-    this.globalMethods = opt.globalMethods || {}
-    this.defaultMiddlewares = {
+  constructor() {
+    this._middlewares = {
       alert: ({ text, title }) => alert(text),
-      confirm: ({ text, title }) => (confirm(text) ? Promise.resolve(true) : Promise.reject(false)),
-      error: err => this.defaultMiddlewares.alert({ text: err.message })
+      confirm: ({ text, title }) => (confirm(text) ? Promise.resolve() : Promise.reject(new Error('CONFIRM'))),
+      prompt: input => {
+        const { text, title, name } = input
+        const result = prompt(text)
+        return result ? Promise.resolve({ [name]: result, ...input }) : Promise.reject(new Error('CONFIRM'))
+      },
+      error: err => this._middlewares.alert({ text: err.message })
     }
   }
 
-  put(name, callback) {
-    assert(isNotBlank(name), 'first argument must be NonBlankString')
-    assert(isFunction(callback), 'second argument must be Function')
-    this.defaultMiddlewares[name] = callback
+  add(name, callback) {
+    assert(isNotBlank(name), 1, 'NonBlankString')
+    assert(isFunction(callback), 2, 'Function')
+    this._middlewares[name] = callback
+    return this
   }
 
-  createMiddleware(prop) {
-    const {
-      type: [selectType],
-      value: [callback],
-      ...others
-    } = createHandler(prop)
+  get(name) {
+    assert(isNotBlank(name), 1, 'NonBlankString')
+    return this._middlewares[name]
+  }
 
-    let result = () => Promise.resolve()
-    let params = {}
-    Object.entries(others).forEach(([key, [value]]) => params[key] = value)
-    
-    if (selectType === 'function') {
-      if (isFunction(callback)) {
-        result = callback
-      } else if (isNotBlank(callback)) {
-        assert(isNotEmptyObject(this.globalMethods), `globalMethods is empty`)
-        result = this.globalMethods[callback]
-        assert(isFunction(result), `Could not find "${callback}" in globalMethods`)
-      } else {
-        assert(false, `middleware callback could not be empty`)
+  create(props) {
+    let result = []
+    for (const prop of createProperty(props)) {
+      const { type: [selectType], value, ...params } = prop
+      let callback
+      if (selectType === 'function') {
+        callback = value[0]
+        assert(isFunction(callback), `middleware callback must not Function`)
+      } else if (isNotBlank(selectType)) {
+        callback = this._middlewares[selectType]
+        assert(isFunction(callback), `Could not find "${selectType}" in middlewares`)
       }
-    } else if (isNotBlank(selectType)) {
-      result = this.defaultMiddlewares[selectType]
-      assert(isFunction(result), `Could not find "${selectType}" in defaultMiddlewares`)
+      result.push({ callback, params })
     }
-    return wrapPromise(result, params)
+    return wrapPromise(result)
   }
 }
 
-function wrapPromise(callback, params) {
+function wrapPromise(callbacks) {
   return function() {
+    let args = Array.from(arguments)
+    let promise = Promise.resolve(args)
     try {
-      const result = callback.apply(this, [...arguments, params])
-      return isPromise(result) ? result : Promise.resolve(result)
+      for (const { callback, params } of callbacks) {
+        promise = promise.then(result => {
+          args = hasValue(result) ? toArray(result) : args
+          args[0] = { ...args[0], ...params}
+          //TODO hasValue to promise
+          return callback.apply(this, args) || args
+        })
+      }
+
+      //TODO remove params
+      return promise.then(result => isArray(result) ? result[0] : (result || args[0]))
     } catch (error) {
       return Promise.reject(error)
     } 

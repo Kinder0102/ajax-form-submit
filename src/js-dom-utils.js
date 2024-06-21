@@ -1,10 +1,10 @@
 import {
   assert,
-  hasValue,
   isArray,
   isObject,
   isNotBlank,
   isFunction,
+  toArray,
   split,
   startsWith
 } from './js-utils'
@@ -17,7 +17,7 @@ export function elementIs(el, type) {
   if (!isElement(el))
     return false
   
-  const elemType = el.tagName.toLowerCase()
+  const elemType = el.tagName?.toLowerCase()
   if (isNotBlank(type)) {
     return type === elemType
   } else if (isArray(type)) {
@@ -36,20 +36,20 @@ export function hasClass(el, classname) {
 }
 
 export function addClass(el, classname) {
-  assert(isElement(el), 'first argument must be HTMLElement')
-  assert(isNotBlank(classname), 'second argument must be NonBlankString')
+  assert(isElement(el), 1, 'HTMLElement')
+  assert(isNotBlank(classname), 2, 'NonBlankString')
   split(classname).forEach(token => el.classList.add(token))
 }
 
 export function removeClass(el, classname) {
-  assert(isElement(el), 'first argument must be HTMLElement')
-  assert(isNotBlank(classname), 'second argument must be NonBlankString')
+  assert(isElement(el), 1, 'HTMLElement')
+  assert(isNotBlank(classname), 2, 'NonBlankString')
   split(classname).forEach(token => el.classList.remove(token))
 }
 
 export function querySelector(selectors, el, withSelf = false) {
   const result = new Set()
-  const input = isArray(selectors) ? selectors : [ selectors ]
+  const input = toArray(selectors)
   let self = el
   if (!isElement(el)) {
     self = document
@@ -73,8 +73,7 @@ export function querySelector(selectors, el, withSelf = false) {
 }
 
 export function getTargets(targets, el) {
-
-  const input = isArray(targets) ? targets : split(targets, ',')
+  const input = toArray(targets, ',')
   const result = new Set()
 
   input.forEach(target => {
@@ -152,7 +151,7 @@ export function registerEvent(elements, eventName, callback) {
 }
 
 export function triggerEvent(elements, eventName, payload) {
-  assert(isNotBlank(eventName), 'second argument must be NonBlankString')
+  assert(isNotBlank(eventName), 2, 'NonBlankString')
   
   const event = new CustomEvent(eventName, { detail: payload })
   checkElements(elements).forEach(elem => elem.dispatchEvent(event))
@@ -167,13 +166,13 @@ function checkElements(elements) {
   let result = []
   if (isArray(elements)) {
     elements.forEach(elem => isElement(elem) && result.push(elem))
-  } else if (isElement(elements)) {
+  } else if (elements === document || isElement(elements)) {
     result.push(elements)
   } else if (isObject(elements)) {
     Object.values(elements).map(checkElements)
       .flat().forEach(elem => result.push(elem))
   } else {
-    assert(false, 1, 'HTMLElement, HTMLElementArray or HTMLElementObject')
+    assert(false, 1, 'document, HTMLElement, HTMLElementArray or HTMLElementObject')
   }
   return result
 }

@@ -1,23 +1,5 @@
 const URL_PATTERN = /http(s)?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{2,256}(\.[a-z]{2,6})?\b([-a-zA-Z0-9@:%_\+.~#?&\/\/=]*)/g
 
-Date.prototype.format = function(fmt) { 
-  var o = {
-    'M+': this.getMonth() + 1,
-    'd+': this.getDate(),
-    'h+': this.getHours(),
-    'm+': this.getMinutes(),
-    's+': this.getSeconds(),
-    'q+': Math.floor((this.getMonth() + 3) / 3),
-    'S': this.getMilliseconds()
-  }
-  if (/(y+)/.test(fmt)) 
-    fmt = fmt.replace(RegExp.$1, (this.getFullYear() + '').substr(4 - RegExp.$1.length))
-  for (var k in o)
-    if (new RegExp('(' + k + ')').test(fmt)) 
-      fmt = fmt.replace(RegExp.$1, (RegExp.$1.length == 1) ? (o[k]) : (('00' + o[k]).substr(('' + o[k]).length)))
-  return fmt
-}
-
 export function assert(condition, message, type) {
   if (condition)
     return
@@ -27,34 +9,6 @@ export function assert(condition, message, type) {
   } else {
     throw new Error(message || 'Assertion failed')
   }
-}
-
-export function startsWith(str, mark) {
-  assert(isNotBlank(mark), 2, 'NonBlankString')
-
-  let exist = false
-  let value = str
-
-  if (isNotBlank(str, mark.length)) {
-    exist = str.startsWith(mark)
-    if (exist)
-      value = value.substring(mark.length, value.length)
-  }
-  return { exist, value }
-}
-
-export function endsWith(str, mark) {
-  assert(isNotBlank(mark), 2, 'NonBlankString')
-
-  let exist = false
-  let value = str
-
-  if (isNotBlank(str, mark.length)) {
-    exist = str.endsWith(mark)
-    if (exist)
-      value = value.substring(0, value.length - mark.length)
-  }
-  return { exist, value }
 }
 
 export function isTrue(value) {
@@ -79,9 +33,9 @@ export function isInteger(value) {
   return Number.isInteger(Number(value))
 }
 
-export function isNotBlank(str, length) {
+export function isNotBlank(str) {
   if (str && typeof str === 'string') {
-    return Number.isInteger(length) ? (str.length > length) : true
+    return str.trim().length > 0
   } else {
     return false
   }
@@ -109,6 +63,14 @@ export function isNotEmptyObject(obj) {
 
 export function isURL(str) {
   return !!new RegExp(URL_PATTERN).test(str)
+}
+
+export function toArray(value, separator) {
+  if (!hasValue(value))
+    return []
+  if (isNotBlank(separator) && isNotBlank(value))
+    return split(value, separator)
+  return (isArray(value) ? value : [ value ]).filter(hasValue)
 }
 
 export function hasValue(value) {
@@ -152,13 +114,38 @@ export function split(str, separator) {
 
   const regex = isNotBlank(separator) ? separator : /[\s,]+/
   if (hasValue(str)) {
-    return str.toString()
-      .split(regex)
-      .map(value => value.trim())
-      .filter(value => isNotBlank(value))
+    return str.toString().split(regex).map(value => value.trim()).filter(isNotBlank)
   } else {
     return []
   } 
+}
+
+export function startsWith(str, mark) {
+  assert(isNotBlank(mark), 2, 'NonBlankString')
+
+  let exist = false
+  let value = str
+
+  if (isNotBlank(str) && str.length > mark.length) {
+    exist = str.startsWith(mark)
+    if (exist)
+      value = value.substring(mark.length, value.length)
+  }
+  return { exist, value }
+}
+
+export function endsWith(str, mark) {
+  assert(isNotBlank(mark), 2, 'NonBlankString')
+
+  let exist = false
+  let value = str
+
+  if (isNotBlank(str) && str.length > mark.length) {
+    exist = str.endsWith(mark)
+    if (exist)
+      value = value.substring(0, value.length - mark.length)
+  }
+  return { exist, value }
 }
 
 export function toCamelCase(str) {
@@ -210,10 +197,33 @@ export function formatNumber(value, n, x) {
 
 export function formatString(str, args = []) {
   let result = isNotBlank(str) ? str : ''
-  const params = isArray(args) ? args : [args]
+  const params = toArray(args)
   return result.replace(/{(\d+)}/g, function(match, number) { 
     return typeof params[number] != 'undefined' ? params[number] : match
   })
+}
+
+export function formatDate(value, format = 'yyyy/MM/dd') {
+  const date = value instanceof Date ? value : new Date(parseInt(value))
+  let result = `${format}`
+  const dateValues = {
+    'M+': date.getMonth() + 1,
+    'd+': date.getDate(),
+    'h+': date.getHours(),
+    'H+': date.getHours(),
+    'm+': date.getMinutes(),
+    's+': date.getSeconds(),
+    'q+': Math.floor((date.getMonth() + 3) / 3),
+    'S': date.getMilliseconds()
+  }
+
+  if (/(y+)/.test(result))
+    result = result.replace(RegExp.$1, `${date.getFullYear()}`.substr(4 - RegExp.$1.length))
+
+  for (const [k, v] of Object.entries(dateValues))
+    if (new RegExp(`(${k})`).test(result))
+      result = result.replace(RegExp.$1, (RegExp.$1.length === 1) ? v : (`00${v}`.substr(`${v}`.length)))
+  return result
 }
 
 export function formatUrl(url, parameters) {

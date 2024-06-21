@@ -6,48 +6,49 @@ import {
   isFunction,
   isNotBlank,
   stringToValue,
-  valueToString
+  valueToString,
+  toArray
 } from './js-utils'
 
-let GLOBAL_HANDLERS = {
-  bypass: handleBypass,
-  mock: handleMock,
-  localStorage: handleLocalStorage
+let HANDLERS = {
+  bypass: { callback: handleBypass, wrapResponse: true },
+  mock: { callback: handleMock, wrapResponse: true },
+  localStorage: { callback: handleLocalStorage, wrapResponse: true },
 }
 
 export default class AjaxFormSubmitSubmitHandler {
 
-  static addSubmitHandler = (type, handler) => {
+  static add = (type, callback, wrapResponse = false) => {
     assert(isNotBlank(type), 1, 'NonBlankString')
-    assert(isFunction(handler), 1, 'Function')
-    GLOBAL_HANDLERS[type] = handler
+    assert(isFunction(callback), 1, 'Function')
+    HANDLERS[type] = { callback, wrapResponse }
   }
 
   constructor(opt = {}) {
-    const { prefix, basePath, createResponse } = opt
-    this._createResponse = createResponse
-    this._data = { prefix, basePath, globalValue: {} }
+    this._payload = opt
+    this._createResponse = opt.createResponse
   }
 
-  run(type, el, input, requestParameter, opt) {
-    const handler = GLOBAL_HANDLERS[type]
-    assert(isFunction(handler), `Could not find submitHandler "${type}"`)
-    return this._createResponse(handler(el, input, requestParameter, this._data, opt))
+  run(type, opt, input, requestParams) {
+    const handler = HANDLERS[type]
+    assert(isFunction(handler?.callback), `Could not find submitHandler "${type}"`)
+    const result = handler.callback({ ...this._payload, ...opt }, input, requestParams)
+    return handler.wrapResponse ? this._createResponse(result) : result
   }
 }
 
-function handleBypass(el, input) {
+function handleBypass(opt, input) {
   let data
   if (isNotBlank(input.globalValue)) {
     const value = window[input.globalValue]
-    data = isArray(value) ? value : [ value ]
+    data = toArray(value)
   } else {
     data = [input]
   }
   return { data }
 }
 
-function handleMock(el, input) {
+function handleMock(opt, input) {
   const size = input.size || 10
   const number = input.page || 0
   const totalElements = 500
@@ -58,9 +59,10 @@ function handleMock(el, input) {
   }
 }
 
-function handleLocalStorage(el, input, requestParameter) {
+//TODO 
+function handleLocalStorage(opt, input, requestParams) {
   let result = {}
-  const { method } = requestParameter
+  const { method } = requestParams
   const {
     localStorageKey: key,
     localStorageIndex: index,

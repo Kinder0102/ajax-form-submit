@@ -1,4 +1,4 @@
-import { assert, hasValue, isNotBlank } from './js-utils'
+import { assert, isNotBlank } from './js-utils'
 
 import { isElement } from './js-dom-utils'
 
@@ -42,7 +42,7 @@ export function createDatasetHelper(prefix = '') {
   }
   const getValue = (el, key, defaultValue) => {
     assert(isElement(el), 1, 'HTMLElement')
-    return el.dataset[keyToDatasetName(key)] || defaultValue
+    return el.dataset?.[keyToDatasetName(key)] || defaultValue
   }
   const setValue = (el, key, value) => {
     assert(isElement(el), 1, 'HTMLElement')

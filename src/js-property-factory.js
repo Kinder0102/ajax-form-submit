@@ -6,39 +6,43 @@ import {
   isTrue,
   isArray,
   hasValue,
+  toArray,
   split
 } from './js-utils'
 
 import { isElement, querySelector } from './js-dom-utils'
+import { createCache } from './js-cache'
 
 const FORMULA_PATTERN = /(\!?)([\w|\.|\-]+)(\!?[\=|\>|\<]{1}\~?)?([\w|\.|\-|\/|\\]+)?/g
+const cache = createCache()
 
-export const createHandler = setting => {
-  let result = { type: [], value: [] }
-  const settings = isArray(setting) ? setting : [ setting || '' ]
-  settings.forEach(str => {
-    if (isObject(str)) {
-      result = str
-    } else if (isFunction(str)) {
-      result.type.push('function')
-      result.value.push(str)
-    } else if(isNotBlank(str)) {
-      split(str, '|').forEach(token => {
-        if (isURL(token)) {
-          result.value.push(token)
-        } else {
-          const tag = split(token, ':')
-          if (tag.length === 2) {
-            const [ key, value ] = tag
-            result[key] = (result[key] || []).concat(split(value, ','))
+export const createProperty = props => {
+  return toArray(props || '').map(prop => {
+    if (isObject(prop)) {
+      return prop
+    } else if (isFunction(prop)) {
+      return { type: ['function'], value: [prop] }
+    } else {
+      if (!isObject(cache.get(prop))) {
+        let data = { type: [], value: [] }
+        split(prop, '|').forEach(token => {
+          if (isURL(token)) {
+            data.value.push(token)
           } else {
-            result.value = result.value.concat(split(tag[0], ','))
+            const tag = split(token, ':')
+            if (tag.length === 2) {
+              const [ key, value ] = tag
+              data[tag[0]] = (data[tag[0]] || []).concat(split(tag[1], ','))
+            } else {
+              data.value = data.value.concat(split(tag[0], ','))
+            }
           }
-        }
-      })
+        })
+        cache.set(prop, data)
+      }
+      return cache.get(prop)
     }
   })
-  return result
 }
 
 export const createTemplateHandler = handlerStr => {
