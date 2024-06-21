@@ -23,111 +23,126 @@ import {
   getTargets
 } from './js-dom-utils'
 
-import DOMHelper from './js-dom-helper'
-import { createHandler } from './js-handler-factory'
-import { createDatasetHelper } from './js-dataset-helper'
+import { createProperty } from './js-property-factory'
 
-const PREFIX = 'afs'
-const BASE_PATH = '/'
-const LIFECYCLES = {
-  before: { name: 'before', required: false },
-  validation: { name: 'validation', required: false },
-  request: { name: 'request', required: false },
-  response: { name: 'response', required: false },
-  after: { name: 'after', required: true },
-  error: { name: 'error', required: false },
-}
-let GLOBAL_HANDLERS = {
-  redirect: createSuccessHandler(handleRedirect),
-  show: createSuccessHandler(handleShow),
-  hide: createSuccessHandler(handleHide),
-  querystring: createSuccessHandler(handleUpdateQueryString),
-  storage: createSuccessHandler(handleStorage),
-  display: createSuccessHandler(handleDisplay()),
+const CLASS_NAME = 'ajax-form-submit-success'
+const SKELETON_CLASS_NAME = `${CLASS_NAME}-skeleton`
+const LIFECYCLES = [
+  { name: 'before', required: false },
+  { name: 'validation', required: false },
+  { name: 'request', required: false },
+  { name: 'response', required: false },
+  { name: 'after', required: true },
+  { name: 'error', required: false },
+]
+
+let HANDLERS = {
+  redirect: createHandler(handleRedirect),
+  show: createHandler(handleShow),
+  hide: createHandler(handleHide),
+  querystring: createHandler(handleUpdateQueryString),
+  storage: createHandler(handleStorage),
+  display: createHandler(handleDisplay()),
+  event: createHandler(handleEvent()),
 }
 
 export default class AjaxFormSubmitSuccessHandler {
 
-  static addSuccessHandler = (type, handler) => {
+  static add = (type, callback) => {
     assert(isNotBlank(type), 1, 'NonBlankString')
-    GLOBAL_HANDLERS[type] = createSuccessHandler(handler)
+    HANDLERS[type] = createHandler(callback)
   }
 
-  constructor(settings, opt = {}) {
-    assert(isObject(settings), 1, 'Object')
-    const {
-      prefix,
-      basePath,
-      applyEventName,
-      triggerEventName,
-      toggleEventName
-    } = opt
+  constructor(opt = {}) {
+    const { handlerProps, attrKey, ...payload } = opt
 
-    this.handlerProps = {}
-    this.data = {
-      prefix: prefix || PREFIX,
-      basePath: basePath || BASE_PATH,
-      globalValue: {}
-    }
-    this.data.datasetHelper = createDatasetHelper(this.data.prefix)
-    this.data.domHelper = new DOMHelper({
-      prefix: this.data.prefix,
-      basePath: this.data.basePath
-    })
-    this.handlers = {
-      apply: createSuccessHandler(handleEvent(applyEventName)),
-      trigger: createSuccessHandler(handleEvent(triggerEventName)),
-      toggle: createSuccessHandler(handleEvent(toggleEventName))
-    }
-
-    for (const [key, value] of Object.entries(settings)) {
-      this.handlerProps[key] = createHandler(value)
-    }
-    for (const [key, value] of Object.entries(GLOBAL_HANDLERS)) {
-      this.handlers[key] = value
-    }
-
-    Object.values(LIFECYCLES).forEach(lifecycle => {
-      this[lifecycle.name] = (el, input, output, type) => this._run(lifecycle, el, input, output, type)
-    })
+    this._root = payload.root
+    this._datasetHelper = payload.datasetHelper
+    this._defaultHandlerProps = handlerProps
+    this._attrKey = attrKey
+    this._attrInputName = this._datasetHelper.keyToInputName(attrKey)
+    this._attrRegex = new RegExp(String.raw`_?${this._attrInputName}-`, 'g')
+    this._payload = payload
+    this._registerLifecycle() 
   }
 
-  _run(lifecycle, el, input, output, type) {
-    const settingTypes = Object.keys(this.handlerProps)
-    if (isNotBlank(type) && !settingTypes.includes(type))
+  _updateHandlerProps(handlerProps) {
+    this._handlerProps = {}
+    this._defaultHandlerProps
+    if (isObject(this._defaultHandlerProps)) {
+      for (const [key, value] of Object.entries(this._defaultHandlerProps)) {
+        this._handlerProps[key] = createProperty(value)
+      }
+    }
+
+    if (isObject(handlerProps)) {
+      for (const [key, value] of Object.entries(handlerProps)) {
+        if (key.includes(this._attrInputName))
+          this._handlerProps[key.replace(this._attrRegex, '')] = createProperty(value)
+      }
+    }
+
+    if (isElement(this._root)) {
+      this._datasetHelper.getKeys(this._root, this._attrKey).forEach(({ key, name }) => {
+        const props = createProperty(this._datasetHelper.getValue(this._root, key))
+        this._handlerProps[name] ||= []
+        this._handlerProps[name] = this._handlerProps[name].concat(props)
+      })
+    }
+  }
+
+  _registerLifecycle() {
+    for (const lifecycle of LIFECYCLES) {
+      this[lifecycle.name] = (opts, input, output, type) => this._run(lifecycle, opts, input, output, type)
+    }
+  }
+
+  _run(lifecycle, opts, input, output, type) {
+    this._updateHandlerProps(opts)
+    const types = Object.keys(this._handlerProps)
+    if (isNotBlank(type) && !types.includes(type))
       return
 
-    let result = {}
-    const selectTypes = type ? [ type ] : settingTypes
+    const selectTypes = type ? [ type ] : types
     selectTypes.forEach(selectType => {
-      const props = this.handlerProps[selectType]
-      const successHandler = this.handlers[selectType]?.[lifecycle.name]
+      const handler = HANDLERS[selectType]?.[lifecycle.name]
       if (lifecycle.required) {
-        assert(isFunction(successHandler), `Could not find "${selectType}" in submitHandlers`)
+        assert(isFunction(handler), `Could not find "${selectType}" in successHandlers`)
       }
-      
-      result[selectType] = successHandler?.(el, input, output, props, this.data)
+      this._handlerProps[selectType].forEach(prop => handler?.(input, output, prop, this._payload))
     })
-    return result
   }
 }
 
-function createSuccessHandler(handler) {
-  if (isFunction(handler)) {
-    return {
-      [LIFECYCLES.after.name]: handler
+function createHandler(callback) {
+  if (isFunction(callback)) {
+    return { after: callback }
+  } else if (isObject(callback)) {
+    let result = {}
+    for (const { name, required } of LIFECYCLES) {
+      isFunction(callback[name]) && (result[name] = callback[name])
+      if (required)
+        assert(isFunction(result[name]), `handler.${name} must be Function`)
     }
-  } else if (isObject(handler)) {
-    Object.values(LIFECYCLES).forEach(({ name }) => {
-      handler[name] && assert(isFunction(handler[name]), `handler.${name} must be Function`)
-    })
-    return handler
+    return result
   } else {
-    assert(false, 2, 'Function or Object')
+    assert(false, 1, 'Function or Object')
   }
 }
 
-function handleRedirect(el, input, output, { target, param }, { basePath }) {
+export function handleEvent(defaultEventName) {
+  return (input, output, { target, event }, { root }) => {
+    const events = new Set(event)
+    if (isNotBlank(defaultEventName) && events.size === 0)
+      events.add(defaultEventName)
+
+    const payload = { input, output }
+    getTargets(target, root).forEach(elem =>
+      events.forEach(eventName => triggerEvent(elem, eventName, payload)))
+  }
+}
+
+function handleRedirect(input, output, { target, param }, { basePath }) {
   if (!hasValue(target) || target.length < 1) {
     location.reload()
     return
@@ -159,21 +174,16 @@ function handleRedirect(el, input, output, { target, param }, { basePath }) {
 
     location.href = url
   }
-  return true
 }
 
 function handleDisplay() {
   return {
-    before: (el, input, output, props, { domHelper, datasetHelper }) => {
-      const { target } = props
-      getTargets(target).forEach(elem => {
-        const isAppend = isTrue(datasetHelper.getValue(elem, 'append'))
-        !isAppend && domHelper?.clearElement?.(elem)
-      })
-      return true
+    before: (input, output, { target }, { domHelper, datasetHelper }) => {
+      getTargets(target)
+        .filter(elem => !isTrue(datasetHelper.getValue(elem, 'append')))
+        .forEach(elem => domHelper?.clearElement?.(elem))
     },
-    request: (el, input, output, props, { domHelper }) => {
-      const { target, skeleton } = props
+    request: (input, output, { target, skeleton }, { domHelper }) => {
       if (!skeleton?.[0] || !input.size)
         return
 
@@ -182,50 +192,24 @@ function handleDisplay() {
         domHelper?.setValueToElement?.(elem, mockOutput, skeleton[0]))
       return true
     },
-    after: (el, input, output, props, { domHelper }) => {
-      const { target, append } = props
-      let result = true
+    after: (input, output, { target }, { domHelper }) => {
       getTargets(target).forEach(elem => {
-        querySelector('.ajax-form-submit-skeleton', elem).forEach(skeleton => skeleton.remove())
-        const notEmpty = domHelper?.setValueToElement?.(elem, output)
-        result &&= notEmpty
+        querySelector(`.${SKELETON_CLASS_NAME}`, elem).forEach(skeleton => skeleton.remove())
+        domHelper?.setValueToElement?.(elem, output)
       })
-      return result
     }
   }
 }
 
-function handleShow(el, input, output, { target }) {
-  showElements(getTargets(target, el))
-  return true
+function handleShow(input, output, { target }, { root }) {
+  showElements(getTargets(target, root))
 }
 
-function handleHide(el, input, output, { target }) {
-  hideElements(getTargets(target, el))
-  return true
+function handleHide(input, output, { target }, { root }) {
+  hideElements(getTargets(target, root))
 }
 
-function handleEvent(defaultEventName) {
-  return (el, input, output, { target, event }) => {
-    let eventSet = new Set(event)
-    if (eventSet.size === 0)
-      eventSet.add(defaultEventName)
-
-    const payload = { input, output }
-    const targetForms = getTargets(target, el)
-    if (isElement(el) && targetForms.length === 0) {
-      targetForms.push(el)
-    }
-
-    eventSet.forEach(eventName => {
-      targetForms.forEach(elem => triggerEvent(elem, eventName, payload))
-    })
-
-    return true
-  }
-}
-
-function handleUpdateQueryString(el, input, output, { target }) {
+function handleUpdateQueryString(input, output, { target }) {
   if (!URL || !location || !history || !history.pushState)
     return
 
@@ -253,34 +237,27 @@ function handleUpdateQueryString(el, input, output, { target }) {
     }
   }
   history.replaceState({ path: url.href }, '', url.href)
-  return true
 }
 
-function handleStorage(el, input, output, { target, value }, { prefix, globalValue }) {
-  const elemKey = isElement(el) ? (el.id || el.name || '') : ''
-  const storageKey = `${prefix}-${elemKey}`
+function handleStorage(input, output, { value }, { root, prefix }) {
+  if (!localStorage)
+    return
+
+  const elemKey = isElement(root) ? (root.id || root.name || '') : ''
+  const storagePrefix = `${prefix}${isNotBlank(elemKey) ? '-': ''}${elemKey}`
+
   const data = { input, output }
   let callback = () => {}
-  target?.forEach(storageType => {
-    switch(storageType) {
-      case 'cookie':
-        break
-      case 'localStorage':
-        callback = setlocalStorage
-        break
+  value?.filter(isNotBlank).forEach(key => {
+    const storageKey = `${storagePrefix}-${key}`
+    if (key === 'timestamp') {
+      localStorage.setItem(storageKey, Date.now())
+    } else {
+      const value = findObjectValue(data, key).value
+        if (hasValue(value) && isNotBlank(key))
+          localStorage.setItem(storageKey, valueToString(value))
     }
-
-    value?.filter(key => isNotBlank(key)).forEach(key => {
-      if (key === 'timestamp') {
-        callback(`${storageKey}-${key}`, Date.now(), globalValue)
-      } else {
-        const value = findObjectValue(data, key).value
-          if (hasValue(value) && isNotBlank(key))
-            callback(`${storageKey}-${key}`, value, globalValue)
-      }
-    })    
   })
-  return true
 }
 
 function setQueryString(url, key, value) {
@@ -292,17 +269,4 @@ function setQueryString(url, key, value) {
   } else if (hasValue(value)) {
     url.searchParams.set(key, value)
   }
-}
-
-function setlocalStorage(key, value, globalValue) {
-  globalValue['handleStorage'] ||= {}
-  globalValue['handleStorage'][key] ||= stringToValue(localStorage?.getItem(key))
-  let currentValue = globalValue['handleStorage'][key]
-  
-  if (isArray(currentValue)) {
-    currentValue.push(value)
-  } else {
-    currentValue = [ value ]
-  }
-  localStorage?.setItem(key, valueToString(currentValue))
 }

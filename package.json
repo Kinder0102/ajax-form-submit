@@ -2,10 +2,21 @@
   "name": "ajax-form-submit",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "exports": {
+    ".": "./src/ajax-form-submit.js",
+    "./js-utils": "./src/js-utils.js",
+    "./js-dom-utils": "./src/js-dom-utils.js",
+    "./js-cache": "./src/js-cache.js",
+    "./js-dataset-helper": "./src/js-dataset-helper.js",
+    "./js-dom-helper": "./src/js-dom-helper.js",
+    "./js-property-factory": "./src/js-property-factory.js"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "esbuild ./src/ajax-form-submit.js --outfile=./dist/ajax-form-submit.min.js --bundle --minify --sourcemap"
   },
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "esbuild": "^0.23.0"
+  }
 }
