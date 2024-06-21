@@ -884,5 +884,5 @@ window.addEventListener('DOMContentLoaded', event => {
   }
 }, { once: true })
 
-export { AjaxFormSubmit } 
+export { AjaxFormSubmit }
 window && (window.AjaxFormSubmit = AjaxFormSubmit)

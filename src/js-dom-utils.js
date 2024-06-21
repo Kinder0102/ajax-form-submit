@@ -167,13 +167,13 @@ function checkElements(elements) {
   let result = []
   if (isArray(elements)) {
     elements.forEach(elem => isElement(elem) && result.push(elem))
-  } else if (isElement(elements)) {
+  } else if (elements === document || isElement(elements)) {
     result.push(elements)
   } else if (isObject(elements)) {
     Object.values(elements).map(checkElements)
       .flat().forEach(elem => result.push(elem))
   } else {
-    assert(false, 1, 'HTMLElement, HTMLElementArray or HTMLElementObject')
+    assert(false, 1, 'document, HTMLElement, HTMLElementArray or HTMLElementObject')
   }
   return result
 }

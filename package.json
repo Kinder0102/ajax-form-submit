@@ -2,7 +2,12 @@
   "name": "ajax-form-submit",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "exports": {
+    ".": "./src/ajax-form-submit.js",
+    "./js-utils": "./src/js-utils.js",
+    "./js-dom-utils": "./src/js-dom-utils.js",
+    "./js-dataset-helper": "./src/js-dataset-helper.js"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

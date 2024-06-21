@@ -318,6 +318,8 @@ export default class DOMHelper {
       }
     } else if (elementIs(el, 'img') || elementIs(el, 'iframe')) {
       el.setAttribute('src', valueFormat)
+    } else if (elementIs(el, 'object')) {
+      el.setAttribute('data', valueFormat)
     } else if (elementIs(el, 'form')) {
       el.setAttribute('action', addBasePath(valueFormat, this.basePath))
     } else {
