@@ -1,7 +1,7 @@
 import {
   assert,
-  formatUrl,
   startsWith,
+  endsWith,
   isTrue,
   isNotBlank,
   isObject,
@@ -12,18 +12,15 @@ import {
   toCamelCase,
   toKebabCase,
   toArray,
-  addBasePath,
   findObjectValue
 } from './js-utils'
 
 import {
-  isElement,
   elementIs,
   hasClass,
   addClass,
   querySelector,
   registerMutationObserver,
-  registerAttributeChange,
   registerEvent,
   triggerEvent,
   stopDefaultEvent,
@@ -38,6 +35,7 @@ import { createProperty } from './js-property-factory'
 import { createDatasetHelper } from './js-dataset-helper'
 import { createInstanceMap } from './js-cache'
 import DOMHelper from './js-dom-helper'
+import requestHelper from './js-request-helper'
 
 import { default as SubmitHandler } from './ajax-form-submit-submit-handler'
 import { default as SuccessHandler, handleEvent } from './ajax-form-submit-success-handler'
@@ -58,12 +56,11 @@ const FORM_EVENT_PAGE_UPDATE = `${FORM_EVENT}-page-update`
 const FORM_EVENT_UPLOAD_START = `${FORM_EVENT}-upload-start`
 const FORM_EVENT_UPLOAD_STOP = `${FORM_EVENT}-upload-stop`
 
-SubmitHandler.add('ajax', submitAjax)
+SubmitHandler.add('ajax', requestHelper.request)
 SuccessHandler.add('apply', handleEvent(FORM_EVENT_APPLY))
 SuccessHandler.add('trigger', handleEvent(FORM_EVENT_TRIGGER))
 SuccessHandler.add('reset', handleEvent(FORM_EVENT_RESET))
 
-const URL_METHOD = [ 'GET', 'DELETE' ]
 const ERROR_TYPE = {
   VALIDATION: 'VALIDATION',
   CONFIRM: 'CONFIRM'
@@ -376,7 +373,12 @@ class AjaxFormSubmit {
     const props = this._getParameters('middleware-request', opt)
     const type = this._getParameters('type', opt)[0] || 'ajax'
     const middleware = AjaxFormSubmit.middleware.create(props)
-    const requestParams = this._generateRequestParameter(opt)
+    const requestParams = {
+      method: this._getParameters('method', opt, 'POST')[0].toUpperCase(),
+      url: this._getParameters('action', opt, opt.url)[0],
+      enctype: this._getParameters('enctype', opt)[0],
+      csrf: getConfig('getCsrfToken')['getCsrfToken']?.()
+    }
 
     disableElements(this._submitButtons)
     showElements(this._controls.spinner)
@@ -441,14 +443,14 @@ class AjaxFormSubmit {
     if (ignoreLifecycle(this._form, this._datasetHelper, 'error'))
       return
 
-    error.message = getError(error)
+    const message = getError(error)
     const messageError = this._controls.messageError
     if (isArray(messageError) && messageError.length > 0) {
       const props = this._getParameters('middleware-error', opt)
       const middleware = AjaxFormSubmit.middleware.create(props)
       middleware(error).then(result => {
         //TODO ignore default handler if middleware break
-        messageError.forEach(elem => this._domHelper.setValueToElement(elem, error))
+        messageError.forEach(elem => this._domHelper.setValueToElement(elem, { message }))
         showElements(messageError)
       })
     } else {
@@ -591,18 +593,6 @@ class AjaxFormSubmit {
     return { formData, props }
   }
 
-  _generateRequestParameter(opt) {
-    const { getCsrfToken } = getConfig('getCsrfToken')
-    const method = this._getParameters('method', opt, 'POST')[0].toUpperCase()
-    const isUrlMethod = URL_METHOD.includes(method)
-    return {
-      method, isUrlMethod,
-      url: this._getParameters('action', opt)[0] ?? this._getParameters('url', opt)[0],
-      enctype: this._getParameters('enctype', opt, 'urlencoded')[0],
-      csrf: getCsrfToken()
-    }
-  }
-
   _clearInputs() {
     if (!this._hasForm)
       return
@@ -613,48 +603,6 @@ class AjaxFormSubmit {
       querySelector(selector, this._form).forEach(elem => elem.remove())
     })
   }
-}
-
-function submitAjax(opt, input, requestParams) {
-  const { basePath, checkResponse, handleProgress } = opt
-  const { formData, hasFile } = objectToFormData(input)
-  const { method, isUrlMethod, url, enctype, csrf } = requestParams
-  const urlParam = isUrlMethod ? `?${new URLSearchParams(formData).toString()}` : ''
-
-  let contentType = false
-  let processData = false
-  let data = null
-  if (hasFile || enctype.includes('multipart')) {
-    data = formData
-  } else if (enctype.includes('json')) {
-    contentType = 'application/json;charset=utf-8'
-    data = JSON.stringify(input)
-  } else if (!isUrlMethod) {
-    contentType = 'application/x-www-form-urlencoded;charset=utf-8'
-    processData = true
-    data = input
-  }
-  
-  let payload = {
-    method, contentType, data, processData,
-    url: addBasePath(`${formatUrl(url, input)}${urlParam}`, basePath),
-    dataType: 'json',
-    xhr: () => {
-      const xhr = new window.XMLHttpRequest()
-      xhr.upload.addEventListener('progress', handleProgress)
-      return xhr
-    }
-  }
-  
-  if (isNotBlank(csrf.header) && isNotBlank(csrf.token)) {
-    payload.beforeSend = req => req.setRequestHeader(csrf.header, csrf.token)
-  }
-
-  return new Promise((resolve, reject) => {
-    $.ajax(payload)
-      .done(response => checkResponse(response) ? resolve(response) : reject(response))
-      .fail(error => reject(error))
-  })
 }
 
 function getConfig(keys) {
@@ -817,8 +765,7 @@ function formDataToObject(formData) {
   
   let obj = {}
   formData.forEach((value, key) => {
-    const isArr = key.includes('[]')
-    const realKey = key.replace('[]', '')
+    const { exist: isArr, value: realKey } = endsWith(key, '[]')
     if (!Reflect.has(obj, realKey)) {
       obj[realKey] = isArr ? [ value ] : value
     } else {
@@ -829,25 +776,6 @@ function formDataToObject(formData) {
     }
   })
   return obj
-}
-
-function objectToFormData(obj) {
-  const formData = new FormData()
-  let hasFile = false
-
-  for (const [key, value] of Object.entries(obj)) {
-    hasFile ||= (value instanceof Blob)
-    if (isArray(value)) {
-      const realKey = `${key}[]`
-      value.forEach(arrayValue => formData.append(realKey, arrayValue))
-    } else {
-      formData.append(key, value)
-    }
-  }
-
-  return {
-    formData, hasFile
-  }
 }
 
 function classifyMessageControl(controls) {

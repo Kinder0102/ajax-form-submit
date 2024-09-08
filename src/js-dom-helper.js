@@ -305,8 +305,10 @@ export default class DOMHelper {
       break
     case 'object':
       el.setAttribute('data', valueFormat)
+      break
     case 'form':
       el.setAttribute('action', addBasePath(valueFormat, this.basePath))
+      break
     default:
       el.textContent = valueFormat
     }

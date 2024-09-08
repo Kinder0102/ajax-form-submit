@@ -12,7 +12,7 @@
     "./js-property-factory": "./src/js-property-factory.js"
   },
   "scripts": {
-    "build": "esbuild ./src/ajax-form-submit.js --outfile=./lib/ajax-form-submit.min.js --bundle --minify --sourcemap"
+    "build": "esbuild ./src/ajax-form-submit.js --outfile=./dist/ajax-form-submit.min.js --bundle --minify --sourcemap"
   },
   "author": "",
   "license": "ISC",
