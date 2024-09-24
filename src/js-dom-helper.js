@@ -250,9 +250,14 @@ export default class DOMHelper {
     assert(isElement(el), 1, 'HTMLElement')
     //TODO attr case insensitive
     let tag = attrName.replace('attr-', '')
-    const format = this.datasetHelper.getValue(el, `attr-${tag}-format`)
-    const enums = this.datasetHelper.getValue(el, `attr-${tag}-enum`)
-    const valueFormat = this.generateValue(values, { format, enums })
+    const valueFormat = this.generateValue(values, {
+      format: this.datasetHelper.getValue(el, `attr-${tag}-format`),
+      valueType: this.datasetHelper.getValue(el, `attr-${tag}-type`),
+      valueTypeFormat: this.datasetHelper.getValue(el, `attr-${tag}-type-format`),
+      enums: this.datasetHelper.getValue(el, `attr-${tag}-enum`),
+      empty: this.datasetHelper.getValue(el, `attr-${tag}-empty`)
+    })
+
 
     if (!tag.includes('data-'))
       tag = toCamelCase(tag)
@@ -329,6 +334,8 @@ export default class DOMHelper {
         return processString(format, dateValues)
       case 'string':
         return processString(format, processEnum(enums, validValues))
+      case 'image':
+        return processString(format, processEnum(enums, processImage(validValues, valueTypeFormat)))
       case 'number':
         const numberValue = processNumber(validValues.reduce((a, b) => a + Number(b), 0), valueTypeFormat)
         return processString(format, processEnum(enums, numberValue))
@@ -352,6 +359,19 @@ function processNumber(input, valueTypeFormat) {
   format['+']?.forEach(value => input += value)
   format['-']?.forEach(value => input -= value)
   return formatNumber(input, format['.']?.[0])
+}
+
+function processImage(inputs, valueTypeFormat) {
+  const format = createProperty(valueTypeFormat)[0]
+  const value = format.value[0]
+  const pattern = format.pattern?.[0] || /\.\w+$/
+  return inputs.map(input => {
+    if (isNotBlank(value)) {
+      return input.replace(pattern, `${value}$&`)
+    } else {
+      return input
+    }
+  })
 }
 
 function processEnum(enums, args = []) {
