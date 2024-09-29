@@ -53,53 +53,37 @@ export default class AjaxFormSubmitSuccessHandler {
     HANDLERS[type] = createHandler(callback)
   }
 
+  #root
+  #datasetHelper
+  #defaultHandlerProps
+  #attrKey
+  #attrInputName
+  #attrRegex
+  #payload
+  #handlerProps
+
   constructor(opt = {}) {
     const { handlerProps, attrKey, ...payload } = opt
 
-    this._root = payload.root
-    this._datasetHelper = payload.datasetHelper
-    this._defaultHandlerProps = handlerProps
-    this._attrKey = attrKey
-    this._attrInputName = this._datasetHelper.keyToInputName(attrKey)
-    this._attrRegex = new RegExp(String.raw`_?${this._attrInputName}-`, 'g')
-    this._payload = payload
-    this._registerLifecycle() 
+    this.#root = payload.root
+    this.#datasetHelper = payload.datasetHelper
+    this.#defaultHandlerProps = handlerProps
+    this.#attrKey = attrKey
+    this.#attrInputName = this.#datasetHelper.keyToInputName(attrKey)
+    this.#attrRegex = new RegExp(String.raw`_?${this.#attrInputName}-`, 'g')
+    this.#payload = payload
+    this.#registerLifecycle() 
   }
 
-  _updateHandlerProps(handlerProps) {
-    this._handlerProps = {}
-    this._defaultHandlerProps
-    if (isObject(this._defaultHandlerProps)) {
-      for (const [key, value] of Object.entries(this._defaultHandlerProps)) {
-        this._handlerProps[key] = createProperty(value)
-      }
-    }
-
-    if (isObject(handlerProps)) {
-      for (const [key, value] of Object.entries(handlerProps)) {
-        if (key.includes(this._attrInputName))
-          this._handlerProps[key.replace(this._attrRegex, '')] = createProperty(value)
-      }
-    }
-
-    if (isElement(this._root)) {
-      this._datasetHelper.getKeys(this._root, this._attrKey).forEach(({ key, name }) => {
-        const props = createProperty(this._datasetHelper.getValue(this._root, key))
-        this._handlerProps[name] ||= []
-        this._handlerProps[name] = this._handlerProps[name].concat(props)
-      })
-    }
-  }
-
-  _registerLifecycle() {
+  #registerLifecycle() {
     for (const lifecycle of LIFECYCLES) {
-      this[lifecycle.name] = (opts, input, output, type) => this._run(lifecycle, opts, input, output, type)
+      this[lifecycle.name] = (opts, input, output, type) => this.#run(lifecycle, opts, input, output, type)
     }
   }
 
-  _run(lifecycle, opts, input, output, type) {
-    this._updateHandlerProps(opts)
-    const types = Object.keys(this._handlerProps)
+  #run(lifecycle, opts, input, output, type) {
+    this.#updateHandlerProps(opts)
+    const types = Object.keys(this.#handlerProps)
     if (isNotBlank(type) && !types.includes(type))
       return
 
@@ -109,8 +93,33 @@ export default class AjaxFormSubmitSuccessHandler {
       if (lifecycle.required) {
         assert(isFunction(handler), `Could not find "${selectType}" in successHandlers`)
       }
-      this._handlerProps[selectType].forEach(prop => handler?.(input, output, prop, this._payload))
+      this.#handlerProps[selectType].forEach(prop => handler?.(input, output, prop, this.#payload))
     })
+  }
+
+  #updateHandlerProps(handlerProps) {
+    this.#handlerProps = {}
+    this.#defaultHandlerProps
+    if (isObject(this.#defaultHandlerProps)) {
+      for (const [key, value] of Object.entries(this.#defaultHandlerProps)) {
+        this.#handlerProps[key] = createProperty(value)
+      }
+    }
+
+    if (isObject(handlerProps)) {
+      for (const [key, value] of Object.entries(handlerProps)) {
+        if (key.includes(this.#attrInputName))
+          this.#handlerProps[key.replace(this.#attrRegex, '')] = createProperty(value)
+      }
+    }
+
+    if (isElement(this.#root)) {
+      this.#datasetHelper.getKeys(this.#root, this.#attrKey).forEach(({ key, name }) => {
+        const props = createProperty(this.#datasetHelper.getValue(this.#root, key))
+        this.#handlerProps[name] ||= []
+        this.#handlerProps[name] = this.#handlerProps[name].concat(props)
+      })
+    }
   }
 }
 

@@ -24,16 +24,19 @@ export default class AjaxFormSubmitSubmitHandler {
     HANDLERS[type] = { callback, wrapResponse }
   }
 
+  #payload
+  #createResponse
+
   constructor(opt = {}) {
-    this._payload = opt
-    this._createResponse = opt.createResponse
+    this.#payload = opt
+    this.#createResponse = opt.createResponse
   }
 
   run(type, opt, input, requestParams) {
     const handler = HANDLERS[type]
     assert(isFunction(handler?.callback), `Could not find submitHandler "${type}"`)
-    const result = handler.callback({ ...this._payload, ...opt }, input, requestParams)
-    return handler.wrapResponse ? this._createResponse(result) : result
+    const result = handler.callback({ ...this.#payload, ...opt }, input, requestParams)
+    return Promise.resolve(handler.wrapResponse ? this.#createResponse(result) : result)
   }
 }
 

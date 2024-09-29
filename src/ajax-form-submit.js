@@ -30,15 +30,15 @@ import {
   disableElements
 } from './js-dom-utils'
 
-import MiddlewareFactory from './js-middleware-factory'
+import { default as SubmitHandler } from './ajax-form-submit-submit-handler'
+import { default as SuccessHandler, handleEvent } from './ajax-form-submit-success-handler'
 import { createProperty } from './js-property-factory'
 import { createDatasetHelper } from './js-dataset-helper'
 import { createInstanceMap } from './js-cache'
+import { createConfig } from './js-config'
 import DOMHelper from './js-dom-helper'
 import requestHelper from './js-request-helper'
-
-import { default as SubmitHandler } from './ajax-form-submit-submit-handler'
-import { default as SuccessHandler, handleEvent } from './ajax-form-submit-success-handler'
+import MiddlewareFactory from './js-middleware-factory'
 
 const FORM_CLASS_NAME = 'ajax-form-submit'
 const FORM_INIT_CLASS_NAME = `${FORM_CLASS_NAME}-initialized`
@@ -56,15 +56,6 @@ const FORM_EVENT_PAGE_UPDATE = `${FORM_EVENT}-page-update`
 const FORM_EVENT_UPLOAD_START = `${FORM_EVENT}-upload-start`
 const FORM_EVENT_UPLOAD_STOP = `${FORM_EVENT}-upload-stop`
 
-SubmitHandler.add('ajax', requestHelper.request)
-SuccessHandler.add('apply', handleEvent(FORM_EVENT_APPLY))
-SuccessHandler.add('trigger', handleEvent(FORM_EVENT_TRIGGER))
-SuccessHandler.add('reset', handleEvent(FORM_EVENT_RESET))
-
-const ERROR_TYPE = {
-  VALIDATION: 'VALIDATION',
-  CONFIRM: 'CONFIRM'
-}
 const UI_CONTROLS = {
   spinner: `${FORM_CLASS_NAME}-spinner`,
   progress: `${FORM_CLASS_NAME}-progress`,
@@ -74,111 +65,77 @@ const UI_CONTROLS = {
   messageEmpty: `${FORM_CLASS_NAME}-message-empty`,
 }
 
-const DEFAULT_CONFIG = {
-  prefix: 'afs',
-  basePath: '/',
-  delay: 0,
-  pagination: {
-    page: 'page',
-    size: 'size',
-    reserve: '_reserve'
-  },
-  response: {
-    create: ({data, page}) => ({ data: { item: data, page } }),
-    checkResponse: res => res?.code === 200,
-    getData: res => res?.data?.item,
-    getPage: res => res?.data?.page,
-    getError: error => error?.code
-  },
-  getCsrfToken: () => ({
-    header: document.querySelector('meta[name="_csrf_header"]')?.getAttribute('content') || 'X-CSRF-TOKEN',
-    token: document.querySelector('meta[name="_csrf"]')?.getAttribute('content') || '' 
-  })
-}
+const config = createConfig(() => [
+  AjaxFormSubmit.config,
+  {
+    prefix: 'afs',
+    basePath: '/',
+    delay: 0,
+    pagination: {
+      page: 'page',
+      size: 'size',
+      reserve: '_reserve'
+    },
+    response: {
+      create: ({ data, page }) => ({ data: { item: data, page } }),
+      checkResponse: res => res?.code === 200,
+      getData: res => res?.data?.item,
+      getPage: res => res?.data?.page,
+      getError: error => error?.code
+    },
+    getCsrfToken: () => ({
+      header: document.querySelector('meta[name="_csrf_header"]')?.content || 'X-CSRF-TOKEN',
+      token: document.querySelector('meta[name="_csrf"]')?.content || '' 
+    })
+  }
+])
 
 let formSubmitAuto = { all: [] }
-
-class AjaxFormError extends Error {
-  static get TYPE() {
-    return ERROR_TYPE
-  }
-  constructor({ message, type, payload }) {
-    super(message)
-    this.type = type
-    this.payload = payload
-  }
-}
+SubmitHandler.add('ajax', requestHelper.request)
+SuccessHandler.add('apply', handleEvent(FORM_EVENT_APPLY))
+SuccessHandler.add('trigger', handleEvent(FORM_EVENT_TRIGGER))
+SuccessHandler.add('reset', handleEvent(FORM_EVENT_RESET))
 
 class AjaxFormSubmit {
   static config = {}
-  static global = {}
-  static submitHandler = SubmitHandler
-  static successHandler = SuccessHandler
   static middleware = new MiddlewareFactory()
   static instance = createInstanceMap(
     el => elementIs(el, 'form') && hasClass(el, FORM_CLASS_NAME) && !hasClass(el, FORM_INIT_CLASS_NAME),
     el => new AjaxFormSubmit(el))
 
-  static get Error() {
-    return AjaxFormError
-  }
+  #form
+  #domHelper
+  #datasetHelper
+  #submitHandler
+  #submitButtons
+  #controls
+  #pagination
 
   constructor(root) {
-    const { prefix, basePath } = getConfig(['prefix', 'basePath'])
-    this._hasForm = elementIs(root, 'form')
-    this._submitButtons = []
-    this._controls = {}
-    this._domHelper = new DOMHelper({ prefix, basePath })
-    this._datasetHelper = createDatasetHelper(prefix)
-    this._initSubmitHandler()
+    const { prefix, basePath } = config.get(['prefix', 'basePath'])
+    this.#form = elementIs(root, 'form') ? root : document.createElement('form')
+    this.#domHelper = new DOMHelper({ prefix, basePath })
+    this.#datasetHelper = createDatasetHelper(prefix)
+    this.#submitHandler = this.#initSubmitHandler()
+    this.#submitButtons = this.#initSubmitButtons()
+    this.#controls = this.#initUIControls()
+    
+    this.initPagination()
+    this.initAutoSubmit()
+    this.initSuccessHandler()
 
-    if (this._hasForm) {
-      this._form = root
-      this._initSubmitButtons()
-      this._initUIControls()
-      
-      this.initPaginations()
-      this.initAutoSubmit()
-      this.initSuccessHandler()
-
-      registerEvent(root, FORM_EVENT_SUBMIT, event => this.submitSync({ event }))
-      registerEvent(root, FORM_EVENT_APPLY, this._handleApplied.bind(this))
-      registerEvent(root, FORM_EVENT_TRIGGER, this._handleTriggered.bind(this))
-      registerEvent(root, FORM_EVENT_RESET, this._handleReset.bind(this))
-      addClass(root, FORM_INIT_CLASS_NAME)
-    }
+    registerEvent(this.#form, FORM_EVENT_SUBMIT, event => this.submitSync({ event }))
+    registerEvent(this.#form, FORM_EVENT_APPLY, this.#handleApplied.bind(this))
+    registerEvent(this.#form, FORM_EVENT_TRIGGER, this.#handleTriggered.bind(this))
+    registerEvent(this.#form, FORM_EVENT_RESET, this.#handleReset.bind(this))
+    addClass(this.#form, FORM_INIT_CLASS_NAME)
   }
 
-  _initSubmitHandler() {
-    const { prefix, basePath, create, checkResponse } = getConfig(['prefix', 'basePath', 'response.create', 'response.checkResponse'])
-    this.submitHandler = new SubmitHandler({
-      prefix, basePath, checkResponse,
-      createResponse: create,
-      handleProgress: this._handleProgress.bind(this)
-    })
-  }
-
-  _initSubmitButtons() {
-    const attrName = this._datasetHelper.keyToAttrName('button')
-    const selector = `button[type="submit"], input[type="image"], [${attrName}]`
-    const buttons = querySelector(selector, this._form)
-      .filter(button => !isNotBlank(button.getAttribute('form')))
-    this.addSubmitButtons(buttons)
-  }
-
-  _initUIControls() {
-    for (const [name, className] of Object.entries(UI_CONTROLS)) {
-      this._controls[name] = [
-        ...querySelector(this._getParameters(toKebabCase(name))),
-        ...querySelector(`.${className}`, this._form)
-      ]
-    }
-  }
-
-  initPaginations(selectors = []) {
-    const { pagination } = getConfig(['pagination'])
+  initPagination(selectors) {
+    //TODO js ajax-form-submit functional submit
+    const { pagination } = config.get('pagination')
     const elems = [
-      ...querySelector(this._getParameters('pagination')),
+      ...querySelector(this.#getParameters('pagination')),
       ...querySelector(selectors)
     ]
 
@@ -186,11 +143,11 @@ class AjaxFormSubmit {
       return
 
     const onPaging = input => {
-      this._pagination.currentPage = {
+      this.#pagination.currentPage = {
         page: input[pagination.page],
         size: input[pagination.size],
       }
-      this._pagination.reservePage = { ...this._pagination.currentPage }
+      this.#pagination.reservePage = { ...this.#pagination.currentPage }
       this.submitSync()
     }
     const updatePage = page => {
@@ -198,12 +155,12 @@ class AjaxFormSubmit {
         triggerEvent(elems, FORM_EVENT_PAGE_UPDATE, { page, onPaging })
     }
 
-    this._pagination = { updatePage }
+    this.#pagination = { updatePage }
     return this
   }
 
   initAutoSubmit(props) {
-    const parameter = this._getParameters('auto', { auto: props })[0]
+    const parameter = this.#getParameters('auto', { auto: props })[0]
     if (!isNotBlank(parameter))
       return
 
@@ -242,27 +199,12 @@ class AjaxFormSubmit {
 
   initSuccessHandler(props) {
     this.successHandler = new SuccessHandler({
-      ...getConfig(['prefix', 'basePath']),
-      root: this._form,
+      root: this.#form,
       handlerProps: props,
       attrKey: 'success',
-      domHelper: this._domHelper,
-      datasetHelper: this._datasetHelper,
-    })
-    return this
-  }
-
-  addSubmitButtons(selectors) {
-    querySelector(selectors).forEach(elem => {
-      const keepPage = hasValue(this._datasetHelper.getValue(elem, 'button'))
-      if (elementIs(elem, ['a', 'button'])) {
-        //TODO button without type
-        if (elem.type !== 'submit')
-          registerEvent(elem, 'click', event => this.submitSync({ keepPage }))
-        this._submitButtons.push(elem)
-      } else {
-        registerEvent(elem, 'change', event => this.submitSync({ keepPage }))
-      }
+      domHelper: this.#domHelper,
+      datasetHelper: this.#datasetHelper,
+      ...config.get(['prefix', 'basePath']),
     })
     return this
   }
@@ -270,7 +212,7 @@ class AjaxFormSubmit {
   addUIControls(opt) {
     assert(isObject(opt), 1, 'Object')
     for (const [type, value] of Object.entries(opt)) {
-      querySelector(value).forEach(elem => this._controls[type].push(elem))
+      querySelector(value).forEach(elem => this.#controls[type].push(elem))
     }
     return this
   }
@@ -279,33 +221,32 @@ class AjaxFormSubmit {
     stopDefaultEvent(opt?.event)
 
     let options = { ...opt, props: {} }
-    let formDataObj
+    let req
     if (isArray(options.data)) {
-      formDataObj = options.data
+      req = options.data
     } else {
-      const { formData, props } = this._generateFormData(options)
-      formDataObj = formDataToObject(formData)
+      const { formData, props } = this.#generateFormData(options)
+      req = formDataToObject(formData)
       options.props = props
     }
 
     //TODO every middleware can update formDataObj
-    return this._handleBefore(formDataObj, options)
-      .then(ignored => this._handleValidation(formDataObj, options))
-      .then(ignored => this._handleRequest(formDataObj, options))
-      .then(data => this._handleResponse(data, options))
-      .then(data => this._handleAfter(data, options))
+    return this.#handleBefore(req, options)
+      .then(ignored => this.#handleValidation(req, options))
+      .then(ignored => this.#handleRequest(req, options))
+      .then(({ request, response }) => this.#handleResponse(request, response, options))
+      .then(({ request, response }) => this.#handleAfter(request, response, options))
       .catch(error => {
-        //TODO reset
+        //TODO reset UI
         switch (error?.message) {
-          case ERROR_TYPE.VALIDATION:
-            showElements(this._controls.messageValidation)
+          case 'VALIDATION':
             break;
-          case ERROR_TYPE.CONFIRM:
-            enableElements(this._submitButtons)
-            hideElements(this._controls)
+          case 'CONFIRM':
+            enableElements(this.#submitButtons)
+            hideElements(this.#controls)
             break;
           default:
-            this._handleError(error)
+            this.#handleError(error)
             throw error
         }
       })
@@ -315,142 +256,189 @@ class AjaxFormSubmit {
     this.submit(opt).catch(ignored => {})
   }
 
-  _handleBefore(data, opt = {}) {
-    const props = this._getParameters('middleware-before', opt)
-    const middleware = AjaxFormSubmit.middleware.create(props)
-    hideElements(this._controls)
-    return middleware(data).then(ignored => this.successHandler?.before?.(opt.props))
+  #initSubmitHandler() {
+    const handleProgress = this.#handleProgress.bind(this)
+    const {
+      prefix,
+      basePath,
+      create: createResponse,
+      checkResponse
+    } = config.get(['prefix', 'basePath', 'response.create', 'response.checkResponse'])
+    return new SubmitHandler({ prefix, basePath, createResponse, checkResponse, handleProgress })
   }
 
-  _handleValidation(data, opt = {}) {
-    const props = this._getParameters('middleware-validation', opt)
-    const middleware = AjaxFormSubmit.middleware.create(props)
+  #initSubmitButtons() {
+    const submitButtons = []
+    const attrName = this.#datasetHelper.keyToAttrName('button')
+    const innerSelector = `button[type="submit"], [${attrName}]`
+    const outterSelector = this.#datasetHelper.getValue(this.#form, 'button')
+    const buttons = [
+      ...querySelector(outterSelector),
+      ...querySelector(innerSelector, this.#form)
+        .filter(button => !isNotBlank(button.getAttribute('form')))
+    ]
+    
+    //TODO outter button registerEvent
+    buttons.forEach(button => {
+      if (elementIs(button, ['a', 'button'])) {
+        submitButtons.push(button)
+        if (button.type !== 'submit')
+          registerEvent(button, 'click', event => this.submitSync())
+      } else {
+        registerEvent(button, 'change', event => this.submitSync())
+      }
+    })
+    return submitButtons
+  }
+
+  #initUIControls() {
+    let controls = {}
+    for (const [name, className] of Object.entries(UI_CONTROLS)) {
+      controls[name] = [
+        ...querySelector(this.#getParameters(toKebabCase(name))),
+        ...querySelector(`.${className}`, this.#form)
+      ]
+    }
+    return controls
+  }
+
+  #handleBefore(request, opt = {}) {
+    const middlewareProps = this.#getParameters('middleware-before', opt)
+    const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
+    return middleware({ request, root: this.#form}).then(ignored => {
+      hideElements(this.#controls)
+      this.successHandler?.before?.(opt.props)
+    })
+  }
+
+  #handleValidation(request, opt = {}) {
+    const middlewareProps = this.#getParameters('middleware-validation', opt)
+    const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
     const fields = new Set()
 
-    if (this._hasForm) {
-      !checkFormValidation(this._form) && fields.add('form')
-      checkHiddenInputValidation(this._form, data)
-        .forEach(fields.add, fields)
+    !checkFormValidation(this.#form) && fields.add('form')
+    checkHiddenInputValidation(this.#form, request)
+      .forEach(fields.add, fields)
 
-      const attrKey = 'required-group'
-      const attrName = this._datasetHelper.keyToAttrName(attrKey)
-      let requiredGroups = {}
-      findFormElem(this._form, `[${attrName}]`).forEach(elem => {
-        const groupName = this._datasetHelper.getValue(elem, attrKey)
-        requiredGroups[groupName] ||= []
-        requiredGroups[groupName].push(elem)
+    const attrKey = 'required-group'
+    const attrName = this.#datasetHelper.keyToAttrName(attrKey)
+    let requiredGroups = {}
+    findFormElem(this.#form, `[${attrName}]`).forEach(elem => {
+      const groupName = this.#datasetHelper.getValue(elem, attrKey)
+      requiredGroups[groupName] ||= []
+      requiredGroups[groupName].push(elem)
+    })
+    
+    for (const [name, group] of Object.entries(requiredGroups)) {
+      const groupValid = group.some(elem => {
+        const elemName = elem.getAttribute('name')
+        let isValid = hasValue(request[elemName]) || isNotBlank(elem.value)
+        isValid ||= querySelector(`[name="${elemName}"]`, this.#form)
+          .some(input => isNotBlank(input.value))
+        return isValid
       })
-      
-      for (const [name, group] of Object.entries(requiredGroups)) {
-        const groupValid = group.some(elem => {
-          const elemName = elem.getAttribute('name')
-          let isValid = hasValue(data[elemName]) || isNotBlank(elem.value)
-          isValid ||= querySelector(`[name="${elemName}"]`, this._form)
-            .some(input => isNotBlank(input.value))
-          return isValid
-        })
-        if (!groupValid)
-          fields.add(name)
-      }
+      if (!groupValid)
+        fields.add(name)
     }
 
-    return middleware(data).then(data => {
-      toArray(data).filter(isNotBlank).forEach(fields.add, fields)
+    //TODO middleware validation
+    return middleware({ request, root: this.#form}).then(result => {
+      toArray(result).filter(isNotBlank).forEach(fields.add, fields)
 
       if (fields.size > 0) {
-        showElements(this._controls.messageValidation)
-        this._pagination?.updatePage?.({})
-        throw new AjaxFormError({
-          message: ERROR_TYPE.VALIDATION,
-          type: ERROR_TYPE.VALIDATION,
-          payload: fields
-        })
+        showElements(this.#controls.messageValidation)
+        this.#pagination?.updatePage?.({})
+        throw new Error('VALIDATION')
       }
     })
   }
 
-  _handleRequest(input, opt = {}) {
-    const props = this._getParameters('middleware-request', opt)
-    const type = this._getParameters('type', opt)[0] || 'ajax'
-    const middleware = AjaxFormSubmit.middleware.create(props)
+  #handleRequest(request, opt = {}) {
+    const middlewareProps = this.#getParameters('middleware-request', opt)
+    const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
+    const type = this.#getParameters('type', opt)[0] || 'ajax'
+    const inAttr = this.#datasetHelper.keyToAttrName('in')
     const requestParams = {
-      method: this._getParameters('method', opt, 'POST')[0].toUpperCase(),
-      url: this._getParameters('action', opt, opt.url)[0],
-      enctype: this._getParameters('enctype', opt)[0],
-      csrf: getConfig('getCsrfToken')['getCsrfToken']?.()
+      method: this.#getParameters('method', opt, 'POST')[0].toUpperCase(),
+      url: this.#getParameters('action', opt, opt.url)[0],
+      enctype: this.#getParameters('enctype', opt)[0],
+      csrf: config.get('getCsrfToken')['getCsrfToken']?.(),
+      headers: findFormElem(this.#form, `[${inAttr}="header"]`)
+        .filter(elem => elem.name)
+        .map(({ name, value }) => ({ name, value }))
     }
 
-    disableElements(this._submitButtons)
-    showElements(this._controls.spinner)
-    this.successHandler?.request?.(opt.props, input)
-
-    return delay(getConfig('delay').delay)
-      .then(ignored => middleware(input, this._form))
-      .then(input => {
-        console.log(input)
-        return this.submitHandler.run(type, opt, input, requestParams)
+    disableElements(this.#submitButtons)
+    showElements(this.#controls.spinner)
+    return delay(config.get('delay').delay)
+      .then(ignored => middleware({ request, root: this.#form}))
+      .then(result => hasValue(result?.request) ? result.request : request)
+      .then(req => {
+        console.log(req)
+        this.successHandler?.request?.(opt.props, req)
+        return this.#submitHandler.run(type, opt, req, requestParams).then(res => ({
+          request: req,
+          response: res
+        }))
       })
-      .then(response => ({ input, response }))
   }
 
-  _handleResponse({ input, response }, opt = {}) {
-    const props = this._getParameters('middleware-response', opt)
-    const middleware = AjaxFormSubmit.middleware.create(props)
-    const { getData, getPage } = getConfig(['response.getData', 'response.getPage'])
+  #handleResponse(request, response, opt = {}) {
+    const { getPage } = config.get('response.getPage')
+    const middlewareProps = this.#getParameters('middleware-response', opt)
+    const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
     
-    return middleware(response, input).then(result => {
-      response = hasValue(result) ? result : response
+    return middleware({ request, response, root: this.#form}).then(result => {
+      const req = hasValue(result?.request) ? result.request : request
+      const res = hasValue(result?.response) ? result.response : response
+      triggerEvent(this.#controls.progress, FORM_EVENT_UPLOAD_STOP)
+      hideElements(this.#controls)
+      return { request: req, response: res }
+    })
+  }
+
+  #handleAfter(request, response, opt = {}) {
+    const { getData, getPage } = config.get(['response.getData', 'response.getPage'])
+    const middlewareProps = this.#getParameters('middleware-after', opt)
+    const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
+
+    return middleware({ request, response, root: this.#form}).then(ignored => {
       const data = getData(response)
       const page = getPage(response)
       const {
         inputMessage, outputMessage, pageMessage
-      } = classifyMessageControl(this._controls.messageSuccess)
+      } = classifyMessageControl(this.#controls.messageSuccess)
 
-      hideElements(this._controls)
-
-      inputMessage.forEach(elem => this._domHelper.setValueToElement(elem, input))
-      outputMessage.forEach(elem => this._domHelper.setValueToElement(elem, data))
-      pageMessage.forEach(elem => this._domHelper.setValueToElement(elem, page))
-      this._pagination?.updatePage?.(page)
-      triggerEvent(this._controls.progress, FORM_EVENT_UPLOAD_STOP)
-      return { input, response }
+      inputMessage.forEach(elem => this.#domHelper.setValueToElement(elem, request))
+      outputMessage.forEach(elem => this.#domHelper.setValueToElement(elem, data))
+      pageMessage.forEach(elem => this.#domHelper.setValueToElement(elem, page))
+      this.#pagination?.updatePage?.(page)
+      this.successHandler?.after?.(opt.props, request, data)
+      this.#clearInputs()
+      showElements(this.#controls.messageSuccess)
+      enableElements(this.#submitButtons)
+      return response
     })
   }
 
-  _handleAfter({ input, response }, opt = {}) {
-    const { getData } = getConfig('response.getData')
-    showElements(this._controls.messageSuccess)
-    enableElements(this._submitButtons)
-    this._clearInputs()
-
-    const success = this.successHandler?.after?.(opt.props, input, getData(response))
-    if (success?.display === false) {
-      showElements(this._controls.messageEmpty)
-      // hideElements(this._controls.messageSuccess)
-    }
-    const props = this._getParameters('middleware-after', opt)
-    const middleware = AjaxFormSubmit.middleware.create(props)
-    return middleware(response, input).then(ignored => (response))
-  }
-
-  _handleError(error, opt = {}) {
+  #handleError(error, opt = {}) {
     console.error(error)
-    const { getError } = getConfig(['response.getError'])
-    enableElements(this._submitButtons)
-    hideElements(this._controls)
-    triggerEvent(this._controls.progress, FORM_EVENT_UPLOAD_STOP)
+    const { getError } = config.get(['response.getError'])
+    enableElements(this.#submitButtons)
+    hideElements(this.#controls)
+    triggerEvent(this.#controls.progress, FORM_EVENT_UPLOAD_STOP)
 
-    if (ignoreLifecycle(this._form, this._datasetHelper, 'error'))
+    if (ignoreLifecycle(this.#form, this.#datasetHelper, 'error'))
       return
 
     const message = getError(error)
-    const messageError = this._controls.messageError
+    const messageError = this.#controls.messageError
     if (isArray(messageError) && messageError.length > 0) {
-      const props = this._getParameters('middleware-error', opt)
-      const middleware = AjaxFormSubmit.middleware.create(props)
+      const middlewareProps = this.#getParameters('middleware-error', opt)
+      const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
       middleware(error).then(result => {
         //TODO ignore default handler if middleware break
-        messageError.forEach(elem => this._domHelper.setValueToElement(elem, { message }))
+        messageError.forEach(elem => this.#domHelper.setValueToElement(elem, { message }))
         showElements(messageError)
       })
     } else {
@@ -458,30 +446,30 @@ class AjaxFormSubmit {
     }
   }
 
-  _handleProgress(event = {}) {
+  #handleProgress(event = {}) {
     const { lengthComputable, loaded, total } = event
     if (!lengthComputable)
       return
 
     const percent = parseInt(loaded / total * 90)
-    triggerEvent(this._controls.progress, FORM_EVENT_UPLOAD_START, [percent])
+    triggerEvent(this.#controls.progress, FORM_EVENT_UPLOAD_START, [percent])
   }
 
-  _handleApplied(event) {
+  #handleApplied(event) {
     stopDefaultEvent(event)
-    const attrName = this._datasetHelper.keyToAttrName('applied')
+    const attrName = this.#datasetHelper.keyToAttrName('applied')
     const payload = {
       input: event?.detail?.input,
       output:  event?.detail?.output,
     }
     
-    const oldValues = querySelector(`.${FORM_APPLY_CLASS_NAME}`, this._form)
+    const oldValues = querySelector(`.${FORM_APPLY_CLASS_NAME}`, this.#form)
 
     for (const [type, applyData] of Object.entries(payload)) {
       if (!hasValue(applyData)) 
         continue
 
-      querySelector(`[${attrName}="${FORM_APPLY_CLASS_NAME}-${type}"]`, this._form)
+      querySelector(`[${attrName}="${FORM_APPLY_CLASS_NAME}-${type}"]`, this.#form)
         .forEach(elem => elem.value = valueToString(applyData))
 
       if (!isObject(applyData)) 
@@ -490,7 +478,7 @@ class AjaxFormSubmit {
       for (const [key, values] of Object.entries(applyData)) {
         const allAttr = `[${attrName}="${key}"]`
         const typeAttr = `[${attrName}-${type}="${key}"]`
-        const targets = querySelector(`${allAttr},${typeAttr}`, this._form)
+        const targets = querySelector(`${allAttr},${typeAttr}`, this.#form)
 
         if (!isArray(values)) {
           targets.forEach(elem => elem.value = valueToString(values))
@@ -504,7 +492,7 @@ class AjaxFormSubmit {
               newInput.setAttribute('name', elem.name)
               addClass(newInput, FORM_APPLY_CLASS_NAME)
               newInput.value = valueToString(value)
-              this._form.append(newInput)
+              this.#form.append(newInput)
             })
           })
         }
@@ -512,43 +500,43 @@ class AjaxFormSubmit {
     }
   }
 
-  _handleTriggered(event) {
+  #handleTriggered(event) {
     stopDefaultEvent(event)
-    this._handleApplied(event)
+    this.#handleApplied(event)
     this.submitSync()
   }
 
-  _handleReset(event) {
-    hideElements(this._controls)
+  #handleReset(event) {
+    hideElements(this.#controls)
     this.successHandler?.before?.()
-    this._pagination?.updatePage?.({})
-    this._form?.reset()
-    this._clearInputs()
+    this.#pagination?.updatePage?.({})
+    this.#form?.reset()
+    this.#clearInputs()
   }
 
-  _getParameters(key, opt, defaultValue) {
+  #getParameters(key, opt, defaultValue) {
     assert(isNotBlank(key), 1, 'NonBlankString')
 
     let result = []
     const camelKey = toCamelCase(key)
     const kebabKey = toKebabCase(key)
-    const prefixInputName = this._datasetHelper.keyToInputName(kebabKey)
+    const prefixInputName = this.#datasetHelper.keyToInputName(kebabKey)
     const inputSelector = `[name="_${prefixInputName}"], [name="_${kebabKey}"]`
     const optValue = isObject(opt) ? (opt[camelKey] ?? opt[kebabKey]) : null
   
     if (hasValue(optValue)) {
       result.push(optValue)
-    } else if (this._hasForm) {
-      querySelector(inputSelector, this._form)
+    } else {
+      querySelector(inputSelector, this.#form)
         .map(elem => elem.value)
         .filter(hasValue)
         .forEach(value => result.push(value))
       if (result.length === 0) {
-        const dataAttrValue = this._datasetHelper.getValue(this._form, kebabKey)
+        const dataAttrValue = this.#datasetHelper.getValue(this.#form, kebabKey)
         hasValue(dataAttrValue) && result.push(dataAttrValue)
       }
       if (result.length === 0) {
-        const attrValue = this._form.getAttribute(kebabKey)
+        const attrValue = this.#form.getAttribute?.(kebabKey)
         hasValue(attrValue) && result.push(attrValue)
       }
     }
@@ -559,19 +547,20 @@ class AjaxFormSubmit {
     return result
   }
 
-  _generateFormData(opt = {}) {
-    const { _hasForm, _form, _pagination } = this
-    const formData = _hasForm ? new FormData(_form) : new FormData()
-    if (_hasForm) {
+  #generateFormData(opt = {}) {
+    const form = this.#form
+    const formData = elementIs(form, 'form') ? new FormData(form) : new FormData()
+    
+    //TODO need finetune
+    appendAdditionalInput(formData, this.#datasetHelper.getValue(form, 'input'))
 
-      //TODO need finetune
-      appendAdditionalInput(formData, this._datasetHelper.getValue(_form, 'input'))
-    }
-
-    appendPaginationParameter(formData, _form, _pagination, opt.keepPage)
+    appendPaginationParameter(formData, form, this.#pagination, opt.keepPage)
     appendFunctionParameter(formData, opt.data)
-    processCheckboxValue(formData, _form)
-    processInputDateValue(formData, _form)
+    processCheckboxValue(formData, form)
+    processInputDateValue(formData, form)
+
+    const headerAttr = this.#datasetHelper.keyToAttrName('header')
+    deleteInputHeader(form, formData, headerAttr)
     const props = deleteInputPropValue(formData)
 
     for (const key of new Set(formData.keys())) {
@@ -584,7 +573,7 @@ class AjaxFormSubmit {
       realKeys.forEach(realKey => {
         formData.delete(realKey)
         let inputValues = values.length === 0 ?
-          this._getParameters(`default-${realKey}`) : values
+          this.#getParameters(`default-${realKey}`) : values
         if (inputValues.length === 0)
           inputValues.push('')
         inputValues.forEach(value => formData.append(realKey, value))
@@ -593,38 +582,19 @@ class AjaxFormSubmit {
     return { formData, props }
   }
 
-  _clearInputs() {
-    if (!this._hasForm)
-      return
-    const attrName = this._datasetHelper.keyToAttrName('clear')
-    findFormElem(this._form, `[${attrName}]`).forEach(elem => {
+  #clearInputs() {
+    const attrName = this.#datasetHelper.keyToAttrName('clear')
+    findFormElem(this.#form, `[${attrName}]`).forEach(elem => {
       elem.value = ''
       const selector = `.${FORM_APPLY_CLASS_NAME}[name="${elem.getAttribute('name')}"]`
-      querySelector(selector, this._form).forEach(elem => elem.remove())
+      querySelector(selector, this.#form).forEach(elem => elem.remove())
     })
   }
 }
 
-function getConfig(keys) {
-  let result = {}
-  toArray(keys).forEach(key => {
-    assert(isNotBlank(key), 0, 'StringArray or NotBlankString')
-    const settingValue = findObjectValue(AjaxFormSubmit.config, key)
-    if (settingValue.exist) {
-      result[settingValue.key] = settingValue.value
-    } else {
-      const defaultValue = findObjectValue(DEFAULT_CONFIG, key)
-      result[defaultValue.key] = defaultValue.value
-    }
-  })
-  return result
-}
-
 function findFormElem(form, selector) {
-  assert(elementIs(form, 'form'), 0, 'HTMLElement Form')
   assert(isNotBlank(selector), 1, 'NonBlankString')
-
-  const formId = form.getAttribute('id')
+  const formId = form.id
   let elems = querySelector(`${selector}`, form)
   if (formId)
     elems = elems.concat(querySelector(`[form="${formId}"]${selector}`))
@@ -686,7 +656,7 @@ function appendPaginationParameter(formData, form, pagination, keepPage) {
     return
 
   const { currentPage, reservePage } = pagination
-  const { reserve } = getConfig('pagination.reserve')
+  const { reserve } = config.get('pagination.reserve')
 
   if (isObject(currentPage)) {
     const page = { ...pagination.currentPage }
@@ -726,6 +696,18 @@ function deleteInputPropValue(formData) {
         formData.delete(key)
         return acc
       }, {})
+}
+
+function deleteInputHeader(form, formData, attrName) {
+  if (!isFormData(formData))
+    return
+  const headerNames = findFormElem(form, `[${attrName}]`)
+    .filter(elem => isNotBlank(elem.name))
+    .map(elem => elem.name)
+
+  Array.from(new Set(formData.keys()))
+    .filter(key => headerNames.includes(key))
+    .forEach(key => formData.delete(key))
 }
 
 function processCheckboxValue(formData, form) {
@@ -804,9 +786,8 @@ function ignoreLifecycle(form, datasetHelper, lifecycle) {
 window.addEventListener('DOMContentLoaded', event => {
   const selector = `.${FORM_CLASS_NAME}`
   querySelector(selector).forEach(form => AjaxFormSubmit.instance.create(form))
-  registerMutationObserver(el => {
-    querySelector(selector, el, true).forEach(form => AjaxFormSubmit.instance.create(form))
-  })
+  registerMutationObserver(el =>
+    querySelector(selector, el, true).forEach(form => AjaxFormSubmit.instance.create(form)))
 
   
   for (const [key, value] of Object.entries(formSubmitAuto)) {
