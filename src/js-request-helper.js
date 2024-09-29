@@ -8,7 +8,7 @@ export default { request }
 function request(opt, input, requestParams) {
   const { basePath, checkResponse, handleProgress } = opt
   const { formData, hasFile } = objectToFormData(input)
-  const { method, url, enctype = '', csrf } = requestParams
+  const { method, url, csrf, headers, enctype = '' } = requestParams
   const isWithDataMethod = WITH_DATA_METHOD.includes(method)
   const param = new URLSearchParams(formData).toString()
   const urlParam = isWithDataMethod ? '' :  `?${param}`
@@ -46,9 +46,10 @@ function request(opt, input, requestParams) {
     if (contentType) {
       xhr.setRequestHeader('Content-type', contentType)
     }
-    if (isNotBlank(csrf.header) && isNotBlank(csrf.token)) {
+    if (isNotBlank(csrf?.header) && isNotBlank(csrf?.token)) {
       xhr.setRequestHeader(csrf.header, csrf.token)
     }
+    headers.forEach(({ name, value }) => xhr.setRequestHeader(name, value))
     xhr.send(data)
   })
 }
@@ -60,8 +61,14 @@ function objectToFormData(obj) {
   for (const [key, value] of Object.entries(obj)) {
     hasFile ||= (value instanceof Blob)
     if (isArray(value)) {
-      const realKey = `${key}[]`
-      value.forEach(arrayValue => formData.append(realKey, arrayValue))
+      let realKey = `${key}[]`
+      value.forEach(arrayValue => {
+        if (arrayValue instanceof Blob) {
+          realKey = key
+          hasFile = true
+        }
+        formData.append(realKey, arrayValue)
+      })
     } else {
       formData.append(key, value)
     }

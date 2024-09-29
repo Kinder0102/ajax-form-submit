@@ -32,19 +32,19 @@ export function elementIs(el, type) {
 }
 
 export function hasClass(el, classname) {
-  return isElement(el) && el.classList.contains(classname)
+  return isElement(el) && el.classList?.contains(classname)
 }
 
 export function addClass(el, classname) {
   assert(isElement(el), 1, 'HTMLElement')
   assert(isNotBlank(classname), 2, 'NonBlankString')
-  split(classname).forEach(token => el.classList.add(token))
+  split(classname).forEach(token => el.classList?.add(token))
 }
 
 export function removeClass(el, classname) {
   assert(isElement(el), 1, 'HTMLElement')
   assert(isNotBlank(classname), 2, 'NonBlankString')
-  split(classname).forEach(token => el.classList.remove(token))
+  split(classname).forEach(token => el.classList?.remove(token))
 }
 
 export function querySelector(selectors, el, withSelf = false) {
@@ -59,12 +59,10 @@ export function querySelector(selectors, el, withSelf = false) {
   for (const selector of input) {
     if (isElement(selector)) {
       result.add(selector)
-      continue
     } else if (isNotBlank(selector)) {
       try {
         if (withSelf && self.matches(selector))
           result.add(self)
-
         self.querySelectorAll(selector).forEach(elem => result.add(elem))
       } catch(ignored) { }
     }

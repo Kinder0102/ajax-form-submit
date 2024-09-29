@@ -51,21 +51,24 @@ const ATTR_BOOLEAN_KEYS = [ 'disabled' ]
 export default class DOMHelper {
 
   #prefix
+  #basePath
+  #datasetHelper
+
   constructor(opt = {}) {
     this.#prefix = opt.prefix
-    this.basePath = opt.basePath || BASE_PATH
-    this.datasetHelper = createDatasetHelper(opt.prefix)
+    this.#basePath = opt.basePath || BASE_PATH
+    this.#datasetHelper = createDatasetHelper(opt.prefix)
   }
 
   setValueToElement(el, value, templateSelector) {
     assert(isElement(el), 1, 'HTMLElement')
     
-    const templateProp = templateSelector || this.datasetHelper.getValue(el, 'template')
+    const templateProp = templateSelector || this.#datasetHelper.getValue(el, 'template')
     if (isArray(value) || isNotBlank(templateProp)) {
       this.setArrayToElement(el, toArray(value), templateProp)
     } else if (hasValue(value)) {
       this.setDisplay(el, value)
-      const { keyToAttrName } = this.datasetHelper
+      const { keyToAttrName } = this.#datasetHelper
       const valueKey = 'value'
       const valueElems = querySelector(`[${keyToAttrName(valueKey)}]`, el, true)
       const classKey = 'class'
@@ -73,7 +76,7 @@ export default class DOMHelper {
       const attrKey = 'attr'
       const attrElems = querySelector('*', el, true)
 
-      attrElems.forEach(elem => this.datasetHelper.getKeys(elem, attrKey)
+      attrElems.forEach(elem => this.#datasetHelper.getKeys(elem, attrKey)
         .filter(({ key }) => !ATTR_IGNORE_KEYS.some(attr => key === attr))
         .forEach(({ key }) => this.fillElement(elem, value, key, this.setAttr.bind(this))))
       classElems.forEach(elem => this.fillElement(elem, value, classKey, this.setClass.bind(this)))
@@ -87,17 +90,17 @@ export default class DOMHelper {
     assert(isElement(el), 1, 'HTMLElement')
     assert(isArray(arr), 2, 'Array')
 
-    if (el.hasAttribute?.(this.datasetHelper.keyToAttrName('array-length'))) {
+    if (el.hasAttribute?.(this.#datasetHelper.keyToAttrName('array-length'))) {
       this.setValue(el, [ arr.length ])
       return
     }
 
-    const templateProp = templateSelector || this.datasetHelper.getValue(el, 'template')
+    const templateProp = templateSelector || this.#datasetHelper.getValue(el, 'template')
     const indexKey = { first: 0, last: arr.length - 1 }
-    const arrayIndexKey = this.datasetHelper.getValue(el, 'array-index')
+    const arrayIndexKey = this.#datasetHelper.getValue(el, 'array-index')
     const arrayIndex = indexKey[arrayIndexKey] ?? arrayIndexKey
-    const valueName = this.datasetHelper.getValue(el, 'array-value')
-    const emptyTemplate = this.datasetHelper.getValue(el, 'value-empty')
+    const valueName = this.#datasetHelper.getValue(el, 'array-value')
+    const emptyTemplate = this.#datasetHelper.getValue(el, 'value-empty')
     const dataArray = (hasValue(arrayIndex) ? [ arr[arrayIndex] ] : arr).filter(hasValue)
 
     if (dataArray.length > 0) {
@@ -121,7 +124,7 @@ export default class DOMHelper {
   appendElement(el, data, templateProp) {
     assert(isElement(el), 1, 'HTMLElement')
 
-    templateProp ||= this.datasetHelper.getValue(el, 'template')
+    templateProp ||= this.#datasetHelper.getValue(el, 'template')
     let templateElem = createTemplateHandler(templateProp).getTemplate(data)
     if (!isElement(templateElem))
       templateElem = createDefaultChild(el, data)
@@ -159,7 +162,7 @@ export default class DOMHelper {
   setInputSource(el) {
     // assert(isElement(el), 1, 'HTMLElement')
 
-    // const inputSource = this.datasetHelper.getValue(el, 'input-source')
+    // const inputSource = this.#datasetHelper.getValue(el, 'input-source')
     // if (!isNotBlank(inputSource))
     //   return
 
@@ -186,7 +189,7 @@ export default class DOMHelper {
     assert(isNotBlank(datasetName), 3, 'NonBlankString')
     assert(isFunction(handler), 4, 'Function')
 
-    const attrValue = this.datasetHelper.getValue(el, datasetName, '')
+    const attrValue = this.#datasetHelper.getValue(el, datasetName, '')
     const keys = split(attrValue, ',')
 
     if (keys.length === 0) {
@@ -209,7 +212,7 @@ export default class DOMHelper {
   setDisplay(el, data) {
     assert(isElement(el), 1, 'HTMLElement')
 
-    const { keyToAttrName, getValue } = this.datasetHelper
+    const { keyToAttrName, getValue } = this.#datasetHelper
     const hiddenKey = 'hidden'
     querySelector(`[${keyToAttrName(hiddenKey)}]`, el, true).forEach(elem => {
       const filter = createFilter(getValue(elem, hiddenKey))
@@ -241,7 +244,7 @@ export default class DOMHelper {
   setClass(el, classNames) {
     assert(isElement(el), 1, 'HTMLElement')
 
-    const enums = this.datasetHelper.getValue(el, 'class-enum')
+    const enums = this.#datasetHelper.getValue(el, 'class-enum')
     const valueFormat = this.generateValue(classNames, { enums })
     split(valueFormat).filter(isNotBlank).forEach(value => addClass(el, value))
   }
@@ -251,11 +254,11 @@ export default class DOMHelper {
     //TODO attr case insensitive
     let tag = attrName.replace('attr-', '')
     const valueFormat = this.generateValue(values, {
-      format: this.datasetHelper.getValue(el, `attr-${tag}-format`),
-      valueType: this.datasetHelper.getValue(el, `attr-${tag}-type`),
-      valueTypeFormat: this.datasetHelper.getValue(el, `attr-${tag}-type-format`),
-      enums: this.datasetHelper.getValue(el, `attr-${tag}-enum`),
-      empty: this.datasetHelper.getValue(el, `attr-${tag}-empty`)
+      format: this.#datasetHelper.getValue(el, `attr-${tag}-format`),
+      valueType: this.#datasetHelper.getValue(el, `attr-${tag}-type`),
+      valueTypeFormat: this.#datasetHelper.getValue(el, `attr-${tag}-type-format`),
+      enums: this.#datasetHelper.getValue(el, `attr-${tag}-enum`),
+      empty: this.#datasetHelper.getValue(el, `attr-${tag}-empty`)
     })
 
 
@@ -275,11 +278,11 @@ export default class DOMHelper {
 
     addClass(el, FILLED_CLASS_NAME)
     const valueFormat = this.generateValue(values, {
-      format: this.datasetHelper.getValue(el, 'value-format'),
-      valueType: this.datasetHelper.getValue(el, 'value-type'),
-      valueTypeFormat: this.datasetHelper.getValue(el, 'value-type-format'),
-      enums: this.datasetHelper.getValue(el, 'value-enum'),
-      empty: this.datasetHelper.getValue(el, 'value-empty')
+      format: this.#datasetHelper.getValue(el, 'value-format'),
+      valueType: this.#datasetHelper.getValue(el, 'value-type'),
+      valueTypeFormat: this.#datasetHelper.getValue(el, 'value-type-format'),
+      enums: this.#datasetHelper.getValue(el, 'value-enum'),
+      empty: this.#datasetHelper.getValue(el, 'value-empty')
     })
 
     switch(el.tagName?.toLowerCase()) {
@@ -296,7 +299,7 @@ export default class DOMHelper {
       }
       break
     case 'a':
-      const link = addBasePath(valueFormat, this.basePath)
+      const link = addBasePath(valueFormat, this.#basePath)
       if (hasClass(el, 'link-with-js')) {
         el.style.cursor = 'pointer'
         registerEvent(el, 'click', event => location.href = link)
@@ -312,7 +315,7 @@ export default class DOMHelper {
       el.setAttribute('data', valueFormat)
       break
     case 'form':
-      el.setAttribute('action', addBasePath(valueFormat, this.basePath))
+      el.setAttribute('action', addBasePath(valueFormat, this.#basePath))
       break
     default:
       el.textContent = valueFormat
