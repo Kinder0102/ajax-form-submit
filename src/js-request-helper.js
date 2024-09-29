@@ -8,7 +8,7 @@ export default { request }
 function request(opt, input, requestParams) {
   const { basePath, checkResponse, handleProgress } = opt
   const { formData, hasFile } = objectToFormData(input)
-  const { method, url, enctype = '', csrf } = requestParams
+  const { method, url, csrf, headers, enctype = '' } = requestParams
   const isWithDataMethod = WITH_DATA_METHOD.includes(method)
   const param = new URLSearchParams(formData).toString()
   const urlParam = isWithDataMethod ? '' :  `?${param}`
@@ -49,6 +49,7 @@ function request(opt, input, requestParams) {
     if (isNotBlank(csrf.header) && isNotBlank(csrf.token)) {
       xhr.setRequestHeader(csrf.header, csrf.token)
     }
+    headers.forEach(({ name, value }) => xhr.setRequestHeader(name, value))
     xhr.send(data)
   })
 }
