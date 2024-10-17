@@ -36,7 +36,7 @@ export default class AjaxFormSubmitSubmitHandler {
     const handler = HANDLERS[type]
     assert(isFunction(handler?.callback), `Could not find submitHandler "${type}"`)
     const result = handler.callback({ ...this.#payload, ...opt }, input, requestParams)
-    return handler.wrapResponse ? this.#createResponse(result) : result
+    return Promise.resolve(handler.wrapResponse ? this.#createResponse(result) : result)
   }
 }
 
