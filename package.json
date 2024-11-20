@@ -6,6 +6,7 @@
     ".": "./src/ajax-form-submit.js",
     "./js-utils": "./src/js-utils.js",
     "./js-dom-utils": "./src/js-dom-utils.js",
+    "./js-config": "./src/js-config.js",
     "./js-cache": "./src/js-cache.js",
     "./js-dataset-helper": "./src/js-dataset-helper.js",
     "./js-dom-helper": "./src/js-dom-helper.js",
