@@ -1,4 +1,3 @@
-// import axios from 'axios'
 import { isArray, isNotBlank , addBasePath, formatUrl } from './js-utils'
 
 const WITH_DATA_METHOD = [ 'POST', 'PUT', 'PATCH' ]
@@ -6,7 +5,7 @@ const WITH_DATA_METHOD = [ 'POST', 'PUT', 'PATCH' ]
 export default { request }
 
 function request(opt, input, requestParams) {
-  const { basePath, checkResponse, handleProgress } = opt
+  const { basePath, handleProgress, createResponse } = opt
   const { formData, hasFile } = objectToFormData(input)
   const { method, url, csrf, headers, enctype = '' } = requestParams
   const isWithDataMethod = WITH_DATA_METHOD.includes(method)
@@ -15,42 +14,54 @@ function request(opt, input, requestParams) {
   const processedUrl = addBasePath(`${formatUrl(url, input)}${urlParam}`, basePath)
 
   let contentType = 'application/json;charset=utf-8'
-  let data = null
+  let body = null
   if (isWithDataMethod) {
     if (hasFile || enctype.includes('multipart')) {
-      data = formData
+      body = formData
       contentType = null
     } else if (enctype.includes('urlencoded')) {
       contentType = 'application/x-www-form-urlencoded'
-      data = param
+      body = param
     } else {
-      data = JSON.stringify(input)
+      body = JSON.stringify(input)
     }
   }
 
-  const xhr = new XMLHttpRequest()
-  xhr.upload.addEventListener('progress', handleProgress)
-  xhr.addEventListener('progress', handleProgress)
+  const fetchOptions = {
+    method: method.toUpperCase(),
+    headers: {},
+    body: isWithDataMethod ? body : undefined,
+  }
+
+  headers.forEach(({ name, value }) => fetchOptions.headers[name] = value)
+  if (contentType) 
+    fetchOptions.headers['Content-Type'] = contentType
+  if (isNotBlank(csrf?.header) && isNotBlank(csrf?.token))
+    fetchOptions.headers[csrf.header] = csrf.token
 
   return new Promise((resolve, reject) => {
-    xhr.addEventListener('load', () => {
-      const response = JSON.parse(xhr.response)
-      checkResponse(response) ? resolve(response) : reject(response)
-    })
-    xhr.addEventListener('error', () => {
-      const { status, statusText } = xhr
-      reject({ status, statusText })
-    })
-
-    xhr.open(method.toUpperCase(), processedUrl, true)
-    if (contentType) {
-      xhr.setRequestHeader('Content-type', contentType)
+    if (handleProgress && hasFile) {
+      const xhr = new XMLHttpRequest()
+      xhr.open(method.toUpperCase(), processedUrl, true)
+      xhr.upload.addEventListener('progress', handleProgress)
+      xhr.addEventListener('progress', handleProgress)
+      xhr.onload = () => {
+        fetch(processedUrl, fetchOptions)
+          .then(response => resolve(response.json()))
+          .catch(error => reject(error))
+      }
+    } else {
+      fetch(processedUrl, fetchOptions)
+        .then(response => {
+          if (response.redirected) {
+            window && (window.location.href = response.url)
+            resolve(createResponse())
+          } else {
+            resolve(response.json())
+          }
+        })
+        .catch(error => reject(error))
     }
-    if (isNotBlank(csrf?.header) && isNotBlank(csrf?.token)) {
-      xhr.setRequestHeader(csrf.header, csrf.token)
-    }
-    headers.forEach(({ name, value }) => xhr.setRequestHeader(name, value))
-    xhr.send(data)
   })
 }
 

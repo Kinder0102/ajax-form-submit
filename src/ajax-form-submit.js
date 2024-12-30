@@ -77,7 +77,7 @@ const config = createConfig(() => [
       reserve: '_reserve'
     },
     response: {
-      create: ({ data, page }) => ({ data: { item: data, page } }),
+      create: value => ({ code: 200, data: { item: value?.data, page: value?.page } }),
       checkResponse: res => res?.code === 200,
       getData: res => res?.data?.item,
       getPage: res => res?.data?.page,
@@ -261,10 +261,9 @@ class AjaxFormSubmit {
     const {
       prefix,
       basePath,
-      create: createResponse,
-      checkResponse
-    } = config.get(['prefix', 'basePath', 'response.create', 'response.checkResponse'])
-    return new SubmitHandler({ prefix, basePath, createResponse, checkResponse, handleProgress })
+      create: createResponse
+    } = config.get(['prefix', 'basePath', 'response.create'])
+    return new SubmitHandler({ prefix, basePath, createResponse, handleProgress })
   }
 
   #initSubmitButtons() {
@@ -354,9 +353,11 @@ class AjaxFormSubmit {
   }
 
   #handleRequest(request, opt = {}) {
+    const { checkResponse } = config.get('response.checkResponse')
     const middlewareProps = this.#getParameters('middleware-request', opt)
     const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
     const type = this.#getParameters('type', opt)[0] || 'ajax'
+    // TODO need finetune
     const inAttr = this.#datasetHelper.keyToAttrName('in')
     const requestParams = {
       method: this.#getParameters('method', opt, 'POST')[0].toUpperCase(),
@@ -376,10 +377,9 @@ class AjaxFormSubmit {
       .then(req => {
         console.log(req)
         this.successHandler?.request?.(opt.props, req)
-        return this.#submitHandler.run(type, opt, req, requestParams).then(res => ({
-          request: req,
-          response: res
-        }))
+        return this.#submitHandler.run(type, opt, req, requestParams)
+          .then(res => checkResponse(res) ? res : Promise.reject(res))
+          .then(res => ({ request: req, response: res }))
       })
   }
 
@@ -428,21 +428,18 @@ class AjaxFormSubmit {
     hideElements(this.#controls)
     triggerEvent(this.#controls.progress, FORM_EVENT_UPLOAD_STOP)
 
-    if (ignoreLifecycle(this.#form, this.#datasetHelper, 'error'))
-      return
-
-    const message = getError(error)
+    const updatedError = { ...error, message: getError(error) }
     const messageError = this.#controls.messageError
     if (isArray(messageError) && messageError.length > 0) {
       const middlewareProps = this.#getParameters('middleware-error', opt)
       const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
-      middleware(error).then(result => {
+      middleware(updatedError).then(result => {
         //TODO ignore default handler if middleware break
-        messageError.forEach(elem => this.#domHelper.setValueToElement(elem, { message }))
+        messageError.forEach(elem => this.#domHelper.setValueToElement(elem, updatedError))
         showElements(messageError)
       })
     } else {
-      AjaxFormSubmit.middleware.get('error')?.(error)
+      AjaxFormSubmit.middleware.get('error')?.(updatedError)
     }
   }
 
@@ -776,11 +773,6 @@ function classifyMessageControl(controls) {
 
 function isFormData(formData) {
   return formData instanceof FormData
-}
-
-function ignoreLifecycle(form, datasetHelper, lifecycle) {
-  const attrName = datasetHelper.keyToAttrName(`ignore-${lifecycle}`)
-  return form.hasAttribute(attrName)
 }
 
 window.addEventListener('DOMContentLoaded', event => {
