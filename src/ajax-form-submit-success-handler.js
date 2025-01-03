@@ -140,12 +140,12 @@ function createHandler(callback) {
 }
 
 export function handleEvent(defaultEventName) {
-  return (input, output, { target, event }, { root }) => {
+  return (input, output, { target, event, ...props }, { root }) => {
     const events = new Set(event)
     if (isNotBlank(defaultEventName) && events.size === 0)
       events.add(defaultEventName)
 
-    const payload = { input, output }
+    const payload = { input, output, props }
     getTargets(target, root).forEach(elem =>
       events.forEach(eventName => triggerEvent(elem, eventName, payload)))
   }

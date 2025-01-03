@@ -110,6 +110,7 @@ class AjaxFormSubmit {
   #submitButtons
   #controls
   #pagination
+  #additionalData
 
   constructor(root) {
     const { prefix, basePath } = config.get(['prefix', 'basePath'])
@@ -119,6 +120,7 @@ class AjaxFormSubmit {
     this.#submitHandler = this.#initSubmitHandler()
     this.#submitButtons = this.#initSubmitButtons()
     this.#controls = this.#initUIControls()
+    this.#additionalData = {}
     
     this.initPagination()
     this.initAutoSubmit()
@@ -132,30 +134,30 @@ class AjaxFormSubmit {
   }
 
   initPagination(selectors) {
-    //TODO js ajax-form-submit functional submit
     const { pagination } = config.get('pagination')
     const elems = [
       ...querySelector(this.#getParameters('pagination')),
       ...querySelector(selectors)
     ]
 
-    if (elems.length === 0)
-      return
-
-    const onPaging = input => {
-      this.#pagination.currentPage = {
-        page: input[pagination.page],
-        size: input[pagination.size],
+    if (elems.length > 0) {
+      this.#pagination = {
+        updatePage: page => {
+          if (!isObject(page))
+            return
+          triggerEvent(elems, FORM_EVENT_PAGE_UPDATE, {
+            page,
+            onPaging: input => {
+              this.#additionalData.page = {
+                [pagination.page]: input[pagination.page],
+                [pagination.size]: input[pagination.size],
+              }
+              this.submitSync({ additional: ['page'] })
+            }
+          })
+        }
       }
-      this.#pagination.reservePage = { ...this.#pagination.currentPage }
-      this.submitSync()
     }
-    const updatePage = page => {
-      if (isObject(page))
-        triggerEvent(elems, FORM_EVENT_PAGE_UPDATE, { page, onPaging })
-    }
-
-    this.#pagination = { updatePage }
     return this
   }
 
@@ -165,7 +167,6 @@ class AjaxFormSubmit {
       return
 
     let needAuto = false
-    let payload = {}
     const { type, value, group } = createProperty(parameter)[0]
     const { exist, value: selectType } = startsWith(type.concat(value)[0], '!')
     const groupName = group?.[0]
@@ -173,25 +174,21 @@ class AjaxFormSubmit {
     switch(selectType) {
       case 'querystring':
         needAuto = isNotBlank(location.search) ^ exist
-        // if (!exist) {
-        //   new URLSearchParams(location.search)
-        //     .forEach((value, key) => { payload[key] = value })
-        // }
         break
       default:
         needAuto = true
     }
 
     if (!exist) {
-      new URLSearchParams(location.search)
-        .forEach((value, key) => { payload[key] = value })
+      this.#additionalData.querystring ||= {}
+      this.#additionalData.querystring = Object.fromEntries(new URLSearchParams(location.search))
     }
 
     if (needAuto) {
       if (groupName) {
-        formSubmitAuto[groupName] = { form: this, payload }
+        formSubmitAuto[groupName] = this
       } else {
-        formSubmitAuto.all.push({ form: this, payload })
+        formSubmitAuto.all.push(this)
       }
     }
     return this
@@ -230,14 +227,12 @@ class AjaxFormSubmit {
       options.props = props
     }
 
-    //TODO every middleware can update formDataObj
     return this.#handleBefore(req, options)
       .then(ignored => this.#handleValidation(req, options))
       .then(ignored => this.#handleRequest(req, options))
       .then(({ request, response }) => this.#handleResponse(request, response, options))
       .then(({ request, response }) => this.#handleAfter(request, response, options))
       .catch(error => {
-        //TODO reset UI
         switch (error?.message) {
           case 'VALIDATION':
             break;
@@ -454,45 +449,30 @@ class AjaxFormSubmit {
 
   #handleApplied(event) {
     stopDefaultEvent(event)
+    this.#additionalData.apply ||= {}
     const attrName = this.#datasetHelper.keyToAttrName('applied')
     const payload = {
       input: event?.detail?.input,
       output:  event?.detail?.output,
     }
     
-    const oldValues = querySelector(`.${FORM_APPLY_CLASS_NAME}`, this.#form)
-
     for (const [type, applyData] of Object.entries(payload)) {
-      if (!hasValue(applyData)) 
-        continue
+      let targets = []
+      if (isObject(applyData)) {
 
-      querySelector(`[${attrName}="${FORM_APPLY_CLASS_NAME}-${type}"]`, this.#form)
-        .forEach(elem => elem.value = valueToString(applyData))
+        for (const [key, values] of Object.entries(applyData)) {
+          const allAttr = `[${attrName}="${key}"]`
+          const typeAttr = `[${attrName}-${type}="${key}"]`
 
-      if (!isObject(applyData)) 
-        continue
-
-      for (const [key, values] of Object.entries(applyData)) {
-        const allAttr = `[${attrName}="${key}"]`
-        const typeAttr = `[${attrName}-${type}="${key}"]`
-        const targets = querySelector(`${allAttr},${typeAttr}`, this.#form)
-
-        if (!isArray(values)) {
-          targets.forEach(elem => elem.value = valueToString(values))
-        } else {
-          targets.forEach(elem => {
-            elem.removeAttribute('value')
-            oldValues.filter(oldValue => oldValue.name === elem.name).forEach(oldValue => oldValue.remove())
-            values.forEach(value => {
-              const newInput = document.createElement('input')
-              newInput.setAttribute('type', 'hidden')
-              newInput.setAttribute('name', elem.name)
-              addClass(newInput, FORM_APPLY_CLASS_NAME)
-              newInput.value = valueToString(value)
-              this.#form.append(newInput)
-            })
-          })
+          querySelector(`${allAttr},${typeAttr}`, this.#form)
+            .filter(elem => elem.name)
+            .forEach(({ name }) => this.#additionalData.apply[name] = values)
         }
+
+      } else if (hasValue(applyData)) {
+        querySelector(`[${attrName}="${FORM_APPLY_CLASS_NAME}-${type}"]`, this.#form)
+          .filter(elem => elem.name)
+          .forEach(({ name }) => this.#additionalData.apply[name] = valueToString(applyData))
       }
     }
   }
@@ -500,7 +480,7 @@ class AjaxFormSubmit {
   #handleTriggered(event) {
     stopDefaultEvent(event)
     this.#handleApplied(event)
-    this.submitSync()
+    this.submitSync({ additional: event?.detail?.props?.additional })
   }
 
   #handleReset(event) {
@@ -551,8 +531,13 @@ class AjaxFormSubmit {
     //TODO need finetune
     appendAdditionalInput(formData, this.#datasetHelper.getValue(form, 'input'))
 
-    appendPaginationParameter(formData, form, this.#pagination, opt.keepPage)
-    appendFunctionParameter(formData, opt.data)
+    if (opt.additional?.includes('page'))
+      appendParameter(formData, this.#additionalData.page)
+    if (opt.additional?.includes('querystring'))
+      appendParameter(formData, this.#additionalData.querystring)
+
+    appendParameter(formData, opt.data)
+    appendParameter(formData, this.#additionalData.apply)
     processCheckboxValue(formData, form)
     processInputDateValue(formData, form)
 
@@ -647,40 +632,13 @@ function appendAdditionalInput(formData, selector) {
     })
 }
 
-function appendPaginationParameter(formData, form, pagination, keepPage) {
-  //TODO
-  if (!isFormData(formData) || !isObject(pagination))
-    return
-
-  const { currentPage, reservePage } = pagination
-  const { reserve } = config.get('pagination.reserve')
-
-  if (isObject(currentPage)) {
-    const page = { ...pagination.currentPage }
-    for (const [key, value] of Object.entries(page)) {
-      formData.set(key, value)
-      delete currentPage[key]
-    }
-  }
-
-  if (isTrue(formData.get(reserve)) && isObject(reservePage)) {
-    for (const [key, value] of Object.entries(reservePage)) {
-      formData.set(key, value)
-    }
-    findFormElem(form, `[name=${reserve}]`).forEach(elem => elem.value = false)
-  }
-}
-
-function appendFunctionParameter(formData, data) {
+function appendParameter(formData, data) {
   if (!isFormData(formData) || !isObject(data))
     return
-  for (const [key, value] of Object.entries(data)) {
-    if (isArray(value)) {
-      formData.delete(key)
-      value.forEach(item => formData.append(key, item))
-    } else {
-      formData.set(key, value)
-    }
+  for (const [key, values] of Object.entries(data)) {
+    formData.delete(key)
+    formData.delete(`${key}[]`)
+    toArray(values).forEach(value => formData.append(key, value))
   }
 }
 
@@ -781,10 +739,10 @@ window.addEventListener('DOMContentLoaded', event => {
   registerMutationObserver(el =>
     querySelector(selector, el, true).forEach(form => AjaxFormSubmit.instance.create(form)))
 
-  
+  const additional = [ 'querystring' ]
   for (const [key, value] of Object.entries(formSubmitAuto)) {
-    toArray(value).forEach(({ form, payload }) =>
-      form.submit({ data: payload }).catch(ignored=> {}))
+    toArray(value).forEach(form =>
+      form.submit({ additional }).catch(ignored => {}))
   }
 }, { once: true })
 
