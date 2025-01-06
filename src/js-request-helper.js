@@ -42,14 +42,18 @@ function request(opt, input, requestParams) {
   return new Promise((resolve, reject) => {
     if (handleProgress && hasFile) {
       const xhr = new XMLHttpRequest()
-      xhr.open(method.toUpperCase(), processedUrl, true)
       xhr.upload.addEventListener('progress', handleProgress)
       xhr.addEventListener('progress', handleProgress)
-      xhr.onload = () => {
-        fetch(processedUrl, fetchOptions)
-          .then(response => resolve(response.json()))
-          .catch(error => reject(error))
+      xhr.addEventListener('load', () => resolve(JSON.parse(xhr.response)))
+      xhr.addEventListener('error', () => {
+        const { status, statusText } = xhr
+        reject({ status, statusText })
+      })
+      xhr.open(fetchOptions.method, processedUrl, true)
+      for (const [key, value] of Object.entries(fetchOptions.headers)) {
+        xhr.setRequestHeader(key, value)
       }
+      xhr.send(fetchOptions.body)
     } else {
       fetch(processedUrl, fetchOptions)
         .then(response => {
