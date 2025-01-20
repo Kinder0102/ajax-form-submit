@@ -124,14 +124,19 @@ export default class DOMHelper {
   appendElement(el, data, templateProp) {
     assert(isElement(el), 1, 'HTMLElement')
 
-    templateProp ||= this.#datasetHelper.getValue(el, 'template')
-    let templateElem = createTemplateHandler(templateProp).getTemplate(data)
-    if (!isElement(templateElem))
-      templateElem = createDefaultChild(el, data)
-    const newElem = this.createElement(data, templateElem)
-    removeClass(newElem, 'ajax-form-submit-initialized')
-    isElement(newElem) && el.append(newElem)
-    return newElem
+    if (elementIs(el, ['input', 'select'])) {
+      el.value = data
+      return el
+    } else {
+      templateProp ||= this.#datasetHelper.getValue(el, 'template')
+      let templateElem = createTemplateHandler(templateProp).getTemplate(data)
+      if (!isElement(templateElem))
+        templateElem = createDefaultChild(el, data)
+      const newElem = this.createElement(data, templateElem)
+      removeClass(newElem, 'ajax-form-submit-initialized')
+      isElement(newElem) && el.append(newElem)
+      return newElem
+    }
   }
 
   createElement(data, templateProp) {
