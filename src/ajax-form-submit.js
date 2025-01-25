@@ -697,22 +697,44 @@ function processInputDateValue(formData, form) {
 }
 
 function formDataToObject(formData) {
+  const result = {}
   if (!isFormData(formData))
-    return formData
-  
-  let obj = {}
-  formData.forEach((value, key) => {
-    const { exist: isArr, value: realKey } = endsWith(key, '[]')
-    if (!Reflect.has(obj, realKey)) {
-      obj[realKey] = isArr ? [ value ] : value
-    } else {
-      if (!isArray(obj[realKey])) {
-        obj[realKey] = [obj[realKey]]
+    return result
+
+  for (const [key, value] of formData.entries()) {
+    const keys = key
+      .replace(/\[(\d*)\]/g, (_, index) => (index ? `.${index}` : '.[]'))
+      .split('.')
+
+    keys.reduce((acc, current, index) => {
+      const isLast = index === keys.length - 1
+
+      if (isLast) {
+        if (current === '[]') {
+          if (!isArray(acc))
+            acc = []
+          acc.push(value)
+        } else if (hasValue(acc[current])) {
+          if (!isArray(acc[current]))
+            acc[current] = [acc[current]]
+          acc[current].push(value)
+        } else {
+          acc[current] = value
+        }
+      } else {
+        if (current === '[]') {
+          if (!isArray(acc))
+            acc[current] = []
+        } else if (!acc[current]) {
+          acc[current] = /^\d+$/.test(keys[index + 1]) || keys[index + 1] === '[]' ? [] : {}
+        }
       }
-      obj[realKey].push(value)
-    }
-  })
-  return obj
+
+      return acc[current]
+    }, result)
+  }
+
+  return result
 }
 
 function classifyMessageControl(controls) {
