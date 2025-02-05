@@ -44,9 +44,46 @@ const CREATE_CLASS_NAME = `${CLASS_NAME}-create`
 const FILLED_CLASS_NAME = `${CLASS_NAME}-filled`
 const REMOVE_CLASS_NAME = `${CLASS_NAME}-remove`
 const INDEX = `${CLASS_NAME}-index`
+const SEQ_NAME = `${CLASS_NAME}-seq`
 const VALUE_NAME = `${CLASS_NAME}-value`
 const ATTR_IGNORE_KEYS = [ 'format', 'enum', 'value-type', 'value-empty' ]
 const ATTR_BOOLEAN_KEYS = [ 'disabled' ]
+
+
+let SET_VALUE_HANDLERS = {
+  input: (el, value, props) => {
+    if (el.getAttribute('type') === 'checkbox') {
+      if (isTrue(value)) {
+        el.setAttribute('checked', 'checked')
+      } else {
+        el.removeAttribute('checked')
+      }
+    } else {
+      el.value = value
+    }
+  },
+  select: (el, value, props) => el.value = value,
+  a: (el, value, props) => el.setAttribute('href', addBasePath(value, props.basePath)),
+  img: (el, value, props) => el.setAttribute('src', value),
+  iframe: (el, value, props) => el.setAttribute('src', value),
+  object: (el, value, props) => el.setAttribute('data', value),
+  form: (el, value, props) => el.setAttribute('action', addBasePath(value, props.basePath)),
+}
+
+let GENERATE_VALUE_HANDLERS = {
+  date: (values, { format, valueTypeFormat }) =>
+    processString(format, values.map(value => formatDate(value, valueTypeFormat))),
+  string: (values, { format, enums }) =>
+    processString(format, processEnum(enums, values)),
+  image: (values, { format, enums }) =>
+    processString(format, processEnum(enums, processImage(values, valueTypeFormat))),
+  number: (values, { format, enums, valueTypeFormat }) => {
+    const number = processNumber(values.reduce((a, b) => a + Number(b), 0), valueTypeFormat)
+    return processString(format, processEnum(enums, number))
+  },
+  percentage: (values, { format, enums }) =>
+    processEnum(enums, `${formatNumber((values.reduce((a, b) => a + Number(b), 0) * 100), format)}%`),
+}
 
 export default class DOMHelper {
 
@@ -60,12 +97,13 @@ export default class DOMHelper {
     this.#datasetHelper = createDatasetHelper(opt.prefix)
   }
 
-  setValueToElement(el, value, templateSelector) {
+  setValueToElement(el, value, opts = {}) {
+    const { template } = opts
     assert(isElement(el), 1, 'HTMLElement')
     
-    const templateProp = templateSelector || this.#datasetHelper.getValue(el, 'template')
+    const templateProp = getTemplateSelector(el, template, this.#datasetHelper)
     if (isArray(value) || isNotBlank(templateProp)) {
-      this.setArrayToElement(el, toArray(value), templateProp)
+      this.setArrayToElement(el, toArray(value), { template: templateProp })
     } else if (hasValue(value)) {
       this.setDisplay(el, value)
       const { keyToAttrName } = this.#datasetHelper
@@ -81,12 +119,10 @@ export default class DOMHelper {
         .forEach(({ key }) => this.fillElement(elem, value, key, this.setAttr.bind(this))))
       classElems.forEach(elem => this.fillElement(elem, value, classKey, this.setClass.bind(this)))
       valueElems.forEach(elem => this.fillElement(elem, value, valueKey, this.setValue.bind(this)))
-      
-      this.setInputSource(el)
     }
   }
 
-  setArrayToElement(el, arr, templateSelector) {
+  setArrayToElement(el, arr, opts = {}) {
     assert(isElement(el), 1, 'HTMLElement')
     assert(isArray(arr), 2, 'Array')
 
@@ -95,28 +131,33 @@ export default class DOMHelper {
       return
     }
 
-    const templateProp = templateSelector || this.#datasetHelper.getValue(el, 'template')
+    const { template } = opts
+    const templateProp = getTemplateSelector(el, template, this.#datasetHelper)
     const indexKey = { first: 0, last: arr.length - 1 }
     const arrayIndexKey = this.#datasetHelper.getValue(el, 'array-index')
     const arrayIndex = indexKey[arrayIndexKey] ?? arrayIndexKey
     const valueName = this.#datasetHelper.getValue(el, 'array-value')
     const emptyTemplate = this.#datasetHelper.getValue(el, 'value-empty')
     const dataArray = (hasValue(arrayIndex) ? [ arr[arrayIndex] ] : arr).filter(hasValue)
+    let arraySeq = parseInt(this.#datasetHelper.getValue(el, 'array-seq')) || 0
 
-    if (dataArray.length > 0) {
-      dataArray.forEach((data, index) => {
-        const objValue = isObject(data) ? data : { [VALUE_NAME]: data }
-        const indexData = { ...objValue, [INDEX]: index }
-        const { value } = findObjectValue(indexData, valueName)
-        if (isArray(value)) {
-          const fragment = document.createDocumentFragment()
-          this.setArrayToElement(fragment, value, templateProp)
-          el.append(fragment)
-        } else {
-          this.appendElement(el, value, templateProp)
-        }
-      })
-    } else if (isNotBlank(emptyTemplate)) {
+    dataArray.forEach((data, index) => {
+      let objValue = isObject(data) ? data : { [VALUE_NAME]: data }
+      objValue[SEQ_NAME] = arraySeq
+      const indexData = { ...objValue, [INDEX]: index }
+      const { value } = findObjectValue(indexData, valueName)
+      if (isArray(value)) {
+        const fragment = document.createDocumentFragment()
+        this.setArrayToElement(fragment, value, { template: templateProp })
+        el.append(fragment)
+      } else {
+        this.appendElement(el, value, templateProp)
+      }
+      arraySeq += 1
+      this.#datasetHelper.setValue(el, 'array-seq', arraySeq)
+    })
+
+    if (arraySeq === 0 && isNotBlank(emptyTemplate)) {
       this.appendElement(el, null, emptyTemplate)
     }
   }
@@ -128,24 +169,20 @@ export default class DOMHelper {
       el.value = data
       return el
     } else {
-      templateProp ||= this.#datasetHelper.getValue(el, 'template')
-      let templateElem = createTemplateHandler(templateProp).getTemplate(data)
-      if (!isElement(templateElem))
-        templateElem = createDefaultChild(el, data)
-      const newElem = this.createElement(data, templateElem)
-      removeClass(newElem, 'ajax-form-submit-initialized')
+      const newElem = this.createElement(data, createTemplate(templateProp, {
+        datasetHelper: this.#datasetHelper,
+        parent: el,
+        data: data,
+        withDefault: true,
+        preventClone: true
+      }))
       isElement(newElem) && el.append(newElem)
       return newElem
     }
   }
 
   createElement(data, templateProp) {
-    let newElem
-    if (isElement(templateProp)) {
-      newElem = templateProp.cloneNode(true)
-    } else if (isNotBlank(templateProp)) {
-      newElem = createTemplateHandler(templateProp).getTemplate()
-    }
+    let newElem = createTemplate(templateProp)
 
     assert(isElement(newElem), `template not found: ${templateProp}`)
 
@@ -158,34 +195,9 @@ export default class DOMHelper {
 
   clearElement(el) {
     assert(isElement(el), 1, 'HTMLElement')
-    querySelector(`.${CREATE_CLASS_NAME}`, el, true)
-        .forEach(elem => elem.remove())
-    querySelector(`.${FILLED_CLASS_NAME}`, el, true)
-      .forEach(elem => this.setValue(elem, ['']))
-  }
-
-  setInputSource(el) {
-    // assert(isElement(el), 1, 'HTMLElement')
-
-    // const inputSource = this.#datasetHelper.getValue(el, 'input-source')
-    // if (!isNotBlank(inputSource))
-    //   return
-
-    // const sourceProps = createProperty(inputSource)
-    // const keyName = sourceProps.value[0] ?? el.getAttribute('name')
-    // sourceProps.type.forEach(type => {
-    //   switch(type) {
-    //     case 'querystring': {
-    //       const querystring = new URLSearchParams(location.search)
-    //       querystring.forEach((value, key) => {
-    //         if (key === keyName)
-    //           el.value = value
-    //         if (!hasValue(el.value))
-    //           el.value = ''
-    //       })
-    //     }
-    //   }
-    // })
+    querySelector(`.${CREATE_CLASS_NAME}`, el, true).forEach(elem => elem.remove())
+    querySelector(`.${FILLED_CLASS_NAME}`, el, true).forEach(elem => this.setValue(elem, ['']))
+    this.#datasetHelper.setValue(el, 'array-seq', 0)
   }
 
   fillElement(el, obj, datasetName, handler) {
@@ -262,8 +274,7 @@ export default class DOMHelper {
       format: this.#datasetHelper.getValue(el, `attr-${tag}-format`),
       valueType: this.#datasetHelper.getValue(el, `attr-${tag}-type`),
       valueTypeFormat: this.#datasetHelper.getValue(el, `attr-${tag}-type-format`),
-      enums: this.#datasetHelper.getValue(el, `attr-${tag}-enum`),
-      empty: this.#datasetHelper.getValue(el, `attr-${tag}-empty`)
+      enums: this.#datasetHelper.getValue(el, `attr-${tag}-enum`)
     })
 
 
@@ -286,73 +297,21 @@ export default class DOMHelper {
       format: this.#datasetHelper.getValue(el, 'value-format'),
       valueType: this.#datasetHelper.getValue(el, 'value-type'),
       valueTypeFormat: this.#datasetHelper.getValue(el, 'value-type-format'),
-      enums: this.#datasetHelper.getValue(el, 'value-enum'),
-      empty: this.#datasetHelper.getValue(el, 'value-empty')
+      enums: this.#datasetHelper.getValue(el, 'value-enum')
     })
 
-    switch(el.tagName?.toLowerCase()) {
-    case 'input':
-    case 'select':
-      if (el.getAttribute('type') === 'checkbox') {
-        if (isTrue(valueFormat)) {
-          el.setAttribute('checked', 'checked')
-        } else {
-          el.removeAttribute('checked')
-        }
-      } else {
-        el.value = valueFormat
-      }
-      break
-    case 'a':
-      const link = addBasePath(valueFormat, this.#basePath)
-      if (hasClass(el, 'link-with-js')) {
-        el.style.cursor = 'pointer'
-        registerEvent(el, 'click', event => location.href = link)
-      } else {
-        el.setAttribute('href', link)
-      }
-      break
-    case 'img':
-    case 'iframe':
-      el.setAttribute('src', valueFormat)
-      break
-    case 'object':
-      el.setAttribute('data', valueFormat)
-      break
-    case 'form':
-      el.setAttribute('action', addBasePath(valueFormat, this.#basePath))
-      break
-    default:
-      el.textContent = valueFormat
-    }
+    let handler = SET_VALUE_HANDLERS[el.tagName?.toLowerCase()]
+    handler ||= ((el, value) => el.textContent = valueFormat)
+    handler(el, valueFormat, { basePath: this.#basePath })
   }
 
-  generateValue(values, { format, enums, empty, valueType = 'string', valueTypeFormat }) {
-    let result = empty ?? ''
-    if (!isArray(values))
-      return result
-
-    let validValues = values.filter(value => hasValue(value))
+  generateValue(values, { valueType = 'string', ...props }) {
+    const validValues = values.filter(value => hasValue(value))
     if (validValues.length === 0)
-      return result
-
-    switch(valueType) {
-      case 'date':
-        const dateValues = validValues.map(value => formatDate(value, valueTypeFormat))
-        return processString(format, dateValues)
-      case 'string':
-        return processString(format, processEnum(enums, validValues))
-      case 'image':
-        return processString(format, processEnum(enums, processImage(validValues, valueTypeFormat)))
-      case 'number':
-        const numberValue = processNumber(validValues.reduce((a, b) => a + Number(b), 0), valueTypeFormat)
-        return processString(format, processEnum(enums, numberValue))
-      case 'percentage':
-        let percentage = validValues.reduce((a, b) => a + Number(b), 0) * 100
-        return processEnum(enums, `${formatNumber(percentage, format)}%`)
-      default:
-        return processEnum(enums, validValues).join()
-    }
+      return ''
+    let handler = GENERATE_VALUE_HANDLERS[valueType]
+    handler ||= ((values, props) => processEnum(props.enums, values).join())
+    return handler(validValues, props)
   }
 }
 
@@ -395,12 +354,29 @@ function processEnum(enums, args = []) {
   }
 }
 
-function createDefaultChild(el, data) {
-  const defaultTag = elementIs(el, 'select') ? 'option' : 'span'
-  const newElem = document.createElement(defaultTag)
-  newElem.value = data
-  newElem.textContent = data
-  return newElem
+function getTemplateSelector(el, value, datasetHelper) {
+  if (datasetHelper)
+    return value || datasetHelper.getValue(el, 'template')
+  return value
+}
+
+function createTemplate(templateProp, opts = {}) {
+  const { parent, data, datasetHelper, withDefault, preventClone } = opts
+  let templateElem
+
+  if (isElement(templateProp)) {
+    templateElem = preventClone ? templateProp : templateProp.cloneNode(true)
+  } else {
+    const templateSelector = getTemplateSelector(parent, templateProp, datasetHelper)
+    templateElem = createTemplateHandler(templateProp).getTemplate()
+  }
+
+  if (!isElement(templateElem) && withDefault) {
+    templateElem = document.createElement('span')
+    templateElem.value = data
+    templateElem.textContent = data
+  }
+  return templateElem
 }
 
 function createEnums(props) {

@@ -46,7 +46,6 @@ export function createDatasetHelper(prefix = '') {
   }
   const setValue = (el, key, value) => {
     assert(isElement(el), 1, 'HTMLElement')
-    assert(isNotBlank(value), 3, 'NonBlankString')
     el.dataset[keyToDatasetName(key)] = value
   }
 

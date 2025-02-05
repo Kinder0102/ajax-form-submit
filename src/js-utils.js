@@ -242,6 +242,17 @@ export function formatUrl(url, parameters) {
   return result
 }
 
+export function deepFilterArrays(obj) {
+  if (isArray(obj)) {
+    return obj.filter(value => hasValue(value)).map(deepFilterArrays)
+  } else if (isObject(obj)) {
+    return Object.fromEntries(
+      Object.entries(obj).map(([key, value]) => [key, deepFilterArrays(value)])
+    )
+  }
+  return obj
+}
+
 export function addBasePath(url, basePath) {
   if (!isNotBlank(url) || isURL(url))
     return url

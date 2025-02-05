@@ -198,7 +198,7 @@ function handleDisplay() {
 
       const mockOutput = Array.from({ length: input.size }, () => ({}))
       getTargets(target).forEach(elem =>
-        domHelper?.setValueToElement?.(elem, mockOutput, skeleton[0]))
+        domHelper?.setValueToElement?.(elem, mockOutput, { template: skeleton[0] }))
       return true
     },
     after: (input, output, { target }, { domHelper }) => {

@@ -12,7 +12,8 @@ import {
   toCamelCase,
   toKebabCase,
   toArray,
-  findObjectValue
+  findObjectValue,
+  deepFilterArrays
 } from './js-utils'
 
 import {
@@ -734,7 +735,7 @@ function formDataToObject(formData) {
     }, result)
   }
 
-  return result
+  return deepFilterArrays(result)
 }
 
 function classifyMessageControl(controls) {

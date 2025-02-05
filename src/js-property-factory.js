@@ -24,21 +24,16 @@ export const createProperty = props => {
       return { type: ['function'], value: [prop] }
     } else {
       if (!isObject(cache.get(prop))) {
-        let data = { type: [], value: [] }
+        let result = { type: [], value: [] }
         split(prop, '|').forEach(token => {
           if (isURL(token)) {
-            data.value.push(token)
+            result.value.push(token)
           } else {
-            const tag = split(token, ':')
-            if (tag.length === 2) {
-              const [ key, value ] = tag
-              data[tag[0]] = (data[tag[0]] || []).concat(split(tag[1], ','))
-            } else {
-              data.value = data.value.concat(split(tag[0], ','))
-            }
+            let [key, value] = token.includes(':') ? split(token, ':') : [null, token]
+            key ? (result[key] = split(value, ',')) : result.value.push(value)
           }
         })
-        cache.set(prop, data)
+        cache.set(prop, result)
       }
       return cache.get(prop)
     }
