@@ -277,15 +277,16 @@ export default class DOMHelper {
       enums: this.#datasetHelper.getValue(el, `attr-${tag}-enum`)
     })
 
+    if (hasValue(valueFormat)) {
+      if (!tag.includes('data-'))
+        tag = toCamelCase(tag)
 
-    if (!tag.includes('data-'))
-      tag = toCamelCase(tag)
-
-    if (ATTR_BOOLEAN_KEYS.includes(tag)) {
-      if (isTrue(valueFormat))
-        el.toggleAttribute(tag)
-    } else {
-      el.setAttribute(tag, valueFormat)
+      if (ATTR_BOOLEAN_KEYS.includes(tag)) {
+        if (isTrue(valueFormat))
+          el.toggleAttribute(tag)
+      } else {
+        el.setAttribute(tag, valueFormat)
+      }
     }
   }
 
@@ -300,15 +301,17 @@ export default class DOMHelper {
       enums: this.#datasetHelper.getValue(el, 'value-enum')
     })
 
-    let handler = SET_VALUE_HANDLERS[el.tagName?.toLowerCase()]
-    handler ||= ((el, value) => el.textContent = valueFormat)
-    handler(el, valueFormat, { basePath: this.#basePath })
+    if (hasValue(valueFormat)) {
+      let handler = SET_VALUE_HANDLERS[el.tagName?.toLowerCase()]
+      handler ||= ((el, value) => el.textContent = valueFormat)
+      handler(el, valueFormat, { basePath: this.#basePath })
+    }
   }
 
   generateValue(values, { valueType = 'string', ...props }) {
     const validValues = values.filter(value => hasValue(value))
     if (validValues.length === 0)
-      return ''
+      return
     let handler = GENERATE_VALUE_HANDLERS[valueType]
     handler ||= ((values, props) => processEnum(props.enums, values).join())
     return handler(validValues, props)
