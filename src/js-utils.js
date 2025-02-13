@@ -198,9 +198,8 @@ export function formatNumber(value, n, x) {
 export function formatString(str, args = []) {
   let result = isNotBlank(str) ? str : ''
   const params = toArray(args)
-  return result.replace(/{(\d+)}/g, function(match, number) { 
-    return typeof params[number] != 'undefined' ? params[number] : match
-  })
+  return result.replace(/{(\d+)}/g, (match, number) => (hasValue(params[number]) ? params[number] : match))
+    .replace(/{(\d+)}/g, '')
 }
 
 export function formatDate(value, format = 'yyyy/MM/dd') {
