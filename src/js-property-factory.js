@@ -30,7 +30,8 @@ export const createProperty = props => {
             result.value.push(token)
           } else {
             let [key, value] = token.includes(':') ? split(token, ':') : [null, token]
-            key ? (result[key] = split(value, ',')) : result.value.push(value)
+            const values = split(value, ',')
+            key ? (result[key] = values) : result.value.push(...values)
           }
         })
         cache.set(prop, result)
