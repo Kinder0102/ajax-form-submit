@@ -151,37 +151,39 @@ export function handleEvent(defaultEventName) {
   }
 }
 
-function handleRedirect(input, output, { target, param }, { basePath }) {
-  if (!hasValue(target) || target.length < 1) {
-    location.reload()
-    return
-  }
+function handleRedirect(input, output, { target, type, param }, { basePath }) {
+  let url = target?.[0]
 
-  let url = target[0]
+  switch(type?.[0]) {
+    case 'back':
+      history.back()
+      break
+    case 'anchor':
+      if (!isNotBlank(url)) {
+        window.scrollTo({ top: 0 })
+      } else {
+        document.querySelector(url)?.scrollIntoView({ block: 'start' })
+      }
+      break
+    default:
+      if (!isNotBlank(url)) {
+        location.reload()
+        break
+      }
+      const outputObj = isObject(output) ? output : { value: output }
+      url = addBasePath(formatUrl(formatUrl(target[0], input), outputObj), basePath)
+      let params = new URLSearchParams()
+      param?.forEach?.(key => {
+        const inputValue = findObjectValue(input, key)
+        const outputValue = findObjectValue(outputObj, key)
+        inputValue.exist && params.set(key, inputValue.value)
+        outputValue.exist && params.set(key, outputValue.value)
+      })
 
-  if (url === 'back') {
-    history.back()
-  } else if (startsWith(url, '#').exist) {
-    if (url === '#top') {
-      window.scrollTo({ top: 0 })
-    } else {
-      document.querySelector(url)?.scrollIntoView({ block: 'start' })
-    }
-  } else {
-    const outputObj = isObject(output) ? output : { value: output }
-    url = addBasePath(formatUrl(formatUrl(target[0], input), outputObj), basePath)
-    let params = new URLSearchParams()
-    param?.forEach?.(key => {
-      const inputValue = findObjectValue(input, key)
-      const outputValue = findObjectValue(outputObj, key)
-      inputValue.exist && params.set(key, inputValue.value)
-      outputValue.exist && params.set(key, outputValue.value)
-    })
+      if (params.size > 0)
+        url += `?${params.toString()}`
 
-    if (params.size > 0)
-      url += `?${params.toString()}`
-
-    location.href = url
+      location.href = url
   }
 }
 
