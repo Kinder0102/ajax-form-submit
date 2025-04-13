@@ -66,29 +66,31 @@ const UI_CONTROLS = {
   messageEmpty: `${FORM_CLASS_NAME}-message-empty`,
 }
 
+const DEFAULT_CONFIG = {
+  prefix: 'afs',
+  basePath: '/',
+  delay: 0,
+  pagination: {
+    page: 'page',
+    size: 'size',
+    reserve: '_reserve'
+  },
+  response: {
+    create: value => ({ code: 200, data: { item: value?.data, page: value?.page } }),
+    checkResponse: res => res?.code === 200,
+    getData: res => res?.data?.item,
+    getPage: res => res?.data?.page,
+    getError: error => error?.code
+  },
+  getCsrfToken: () => ({
+    header: document.querySelector('meta[name="_csrf_header"]')?.content || 'X-CSRF-TOKEN',
+    token: document.querySelector('meta[name="_csrf"]')?.content || '' 
+  })
+}
+
 const config = createConfig(() => [
   AjaxFormSubmit.config,
-  {
-    prefix: 'afs',
-    basePath: '/',
-    delay: 0,
-    pagination: {
-      page: 'page',
-      size: 'size',
-      reserve: '_reserve'
-    },
-    response: {
-      create: value => ({ code: 200, data: { item: value?.data, page: value?.page } }),
-      checkResponse: res => res?.code === 200,
-      getData: res => res?.data?.item,
-      getPage: res => res?.data?.page,
-      getError: error => error?.code
-    },
-    getCsrfToken: () => ({
-      header: document.querySelector('meta[name="_csrf_header"]')?.content || 'X-CSRF-TOKEN',
-      token: document.querySelector('meta[name="_csrf"]')?.content || '' 
-    })
-  }
+  
 ])
 
 let formSubmitAuto = { all: [] }
@@ -104,6 +106,7 @@ class AjaxFormSubmit {
     el => elementIs(el, 'form') && hasClass(el, FORM_CLASS_NAME) && !hasClass(el, FORM_INIT_CLASS_NAME),
     el => new AjaxFormSubmit(el))
 
+  #config
   #form
   #domHelper
   #datasetHelper
@@ -114,10 +117,16 @@ class AjaxFormSubmit {
   #additionalData
 
   constructor(root) {
-    const { prefix, basePath } = config.get(['prefix', 'basePath'])
     this.#form = elementIs(root, 'form') ? root : document.createElement('form')
-    this.#domHelper = new DOMHelper({ prefix, basePath })
+    this.config = {}
+    this.#config = createConfig(() => [ this.config, AjaxFormSubmit.config, DEFAULT_CONFIG ])
+
+    const { prefix } = this.#config.get('prefix')
     this.#datasetHelper = createDatasetHelper(prefix)
+    this.updateConfig()
+
+    const { basePath } = this.#config.get('basePath')
+    this.#domHelper = new DOMHelper({ prefix, basePath })
     this.#submitHandler = this.#initSubmitHandler()
     this.#submitButtons = this.#initSubmitButtons()
     this.#controls = this.#initUIControls()
@@ -134,8 +143,18 @@ class AjaxFormSubmit {
     addClass(this.#form, FORM_INIT_CLASS_NAME)
   }
 
+  updateConfig(props) {
+    Object.assign(this.config, props)
+    createProperty(this.#getParameters('config')).forEach(config => {
+      for (const [key, values] of Object.entries(config)) {
+        if (hasValue(values[0]))
+          this.config[key] = values[0]
+      }
+    })
+  }
+
   initPagination(selectors) {
-    const { pagination } = config.get('pagination')
+    const { pagination } = this.#config.get('pagination')
     const elems = [
       ...querySelector(this.#getParameters('pagination')),
       ...querySelector(selectors)
@@ -202,7 +221,7 @@ class AjaxFormSubmit {
       attrKey: 'success',
       domHelper: this.#domHelper,
       datasetHelper: this.#datasetHelper,
-      ...config.get(['prefix', 'basePath']),
+      ...this.#config.get(['prefix', 'basePath']),
     })
     return this
   }
@@ -236,11 +255,11 @@ class AjaxFormSubmit {
       .catch(error => {
         switch (error?.message) {
           case 'VALIDATION':
-            break;
+            break
           case 'CONFIRM':
             enableElements(this.#submitButtons)
             hideElements(this.#controls)
-            break;
+            break
           default:
             this.#handleError(error)
             throw error
@@ -258,7 +277,7 @@ class AjaxFormSubmit {
       prefix,
       basePath,
       create: createResponse
-    } = config.get(['prefix', 'basePath', 'response.create'])
+    } = this.#config.get(['prefix', 'basePath', 'response.create'])
     return new SubmitHandler({ prefix, basePath, createResponse, handleProgress })
   }
 
@@ -349,7 +368,6 @@ class AjaxFormSubmit {
   }
 
   #handleRequest(request, opt = {}) {
-    const { checkResponse } = config.get('response.checkResponse')
     const middlewareProps = this.#getParameters('middleware-request', opt)
     const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
     const type = this.#getParameters('type', opt)[0] || 'ajax'
@@ -359,7 +377,7 @@ class AjaxFormSubmit {
       method: this.#getParameters('method', opt, 'POST')[0].toUpperCase(),
       url: this.#getParameters('action', opt, opt.url)[0],
       enctype: this.#getParameters('enctype', opt)[0],
-      csrf: config.get('getCsrfToken')['getCsrfToken']?.(),
+      csrf: this.#config.get('getCsrfToken')['getCsrfToken']?.(),
       headers: findFormElem(this.#form, `[${inAttr}="header"]`)
         .filter(elem => elem.name)
         .map(({ name, value }) => ({ name, value }))
@@ -367,24 +385,28 @@ class AjaxFormSubmit {
 
     disableElements(this.#submitButtons)
     showElements(this.#controls.spinner)
-    return delay(config.get('delay').delay)
+    return delay(this.#config.get('delay').delay)
       .then(ignored => middleware({ request, root: this.#form}))
       .then(result => hasValue(result?.request) ? result.request : request)
       .then(req => {
         console.log(req)
         this.successHandler?.request?.(opt.props, req)
         return this.#submitHandler.run(type, opt, req, requestParams)
-          .then(res => checkResponse(res) ? res : Promise.reject(res))
           .then(res => ({ request: req, response: res }))
       })
   }
 
   #handleResponse(request, response, opt = {}) {
-    const { getPage } = config.get('response.getPage')
+    const { checkResponse, getPage } = this.#config.get([
+      'response.checkResponse',
+      'response.getPage'
+    ])
     const middlewareProps = this.#getParameters('middleware-response', opt)
     const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
     
-    return middleware({ request, response, root: this.#form}).then(result => {
+    return middleware({ request, response, root: this.#form})
+    .then(result => checkResponse(result.response) ? result : Promise.reject(result.response))
+    .then(result => {
       const req = hasValue(result?.request) ? result.request : request
       const res = hasValue(result?.response) ? result.response : response
       triggerEvent(this.#controls.progress, FORM_EVENT_UPLOAD_STOP)
@@ -394,7 +416,7 @@ class AjaxFormSubmit {
   }
 
   #handleAfter(request, response, opt = {}) {
-    const { getData, getPage } = config.get(['response.getData', 'response.getPage'])
+    const { getData, getPage } = this.#config.get(['response.getData', 'response.getPage'])
     const middlewareProps = this.#getParameters('middleware-after', opt)
     const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
 
@@ -419,7 +441,7 @@ class AjaxFormSubmit {
 
   #handleError(error, opt = {}) {
     console.error(error)
-    const { getError } = config.get(['response.getError'])
+    const { getError } = this.#config.get(['response.getError'])
     enableElements(this.#submitButtons)
     hideElements(this.#controls)
     triggerEvent(this.#controls.progress, FORM_EVENT_UPLOAD_STOP)
