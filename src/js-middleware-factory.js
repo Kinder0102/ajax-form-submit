@@ -1,4 +1,4 @@
-import { assert, toArray, isObject, isArray, isFunction, isPromise, isNotBlank} from './js-utils'
+import { assert, toArray, isObject, isArray, isFunction, isPromise, isNotBlank, isTrue} from './js-utils'
 import { createProperty } from './js-property-factory'
 
 export default class MiddlewareFactory {
@@ -33,28 +33,26 @@ export default class MiddlewareFactory {
   create(props) {
     let result = []
     for (const prop of createProperty(props)) {
-      const { type: [selectType], value, ...params } = prop
-      let callback
-      if (selectType === 'function') {
-        callback = value[0]
-        assert(isFunction(callback), `middleware callback must not Function`)
-      } else if (isNotBlank(selectType)) {
-        callback = this.#middlewares[selectType]
-        assert(isFunction(callback), `Could not find "${selectType}" in middlewares`)
-      }
-      callback && result.push({ callback, params })
+      const { type: [selectType], skip: skipProps, value, ...params } = prop
+      const skip = wrapSkip(skipProps)
+      const callback = this.#middlewares[selectType]
+      assert(isFunction(callback), `Could not find "${selectType}" in middlewares`)
+      result.push({ callback, skip, params })
     }
     return wrapPromise(result)
   }
 }
 
 function wrapPromise(callbacks) {
-  return function() {
+  return async function() {
     let arg = arguments[0]
     let updatedArg = arg
     let promise = Promise.resolve(arg)
     try {
-      for (const { callback, params } of callbacks) {
+      for (const { callback, skip, params } of callbacks) {
+        const shouldSkip = await skip.apply(this, [ params, updatedArg ])
+        if (shouldSkip)
+          continue
         promise = promise.then(result => {
           isObject(result) && (updatedArg = result)
           return callback.apply(this, [ params, updatedArg ])
@@ -65,5 +63,26 @@ function wrapPromise(callbacks) {
     } catch (error) {
       return Promise.reject(error)
     } 
+  }
+}
+
+function wrapSkip(skipProps) {
+  const skipProp = toArray(skipProps)[0]
+  if (isNotBlank(skipProp)) {
+    const skipFunc = window[skipProp]
+    if (isFunction(skipFunc)) {
+      return (...args) => {
+        try {
+          const result = skipFunc(...args)
+          return isPromise(result) ? result : Promise.resolve(result)
+        } catch(error) {
+          return Promise.reject(error)
+        }
+      }
+    } else {
+      return () => Promise.resolve(isTrue(skipProp))
+    }
+  } else {
+    return () => Promise.resolve(false)
   }
 }
