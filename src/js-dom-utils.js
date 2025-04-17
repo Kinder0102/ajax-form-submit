@@ -37,13 +37,11 @@ export function hasClass(el, classname) {
 
 export function addClass(el, classname) {
   assert(isElement(el), 1, 'HTMLElement')
-  assert(isNotBlank(classname), 2, 'NonBlankString')
   split(classname).forEach(token => el.classList?.add(token))
 }
 
 export function removeClass(el, classname) {
   assert(isElement(el), 1, 'HTMLElement')
-  assert(isNotBlank(classname), 2, 'NonBlankString')
   split(classname).forEach(token => el.classList?.remove(token))
 }
 
