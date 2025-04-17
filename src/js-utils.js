@@ -108,16 +108,49 @@ export function stringToValue(str) {
   return result
 }
 
-export function split(str, separator) {
+export function split(str, delimiter) {
   if (isArray(str))
     return str
-
-  const regex = isNotBlank(separator) ? separator : /[\s,]+/
-  if (hasValue(str)) {
-    return str.toString().split(regex).map(value => value.trim()).filter(isNotBlank)
-  } else {
+  if (typeof str !== 'string')
+    return [str]
+  if (!isNotBlank(str))
     return []
-  } 
+
+  const result = []
+  let current = ''
+  let i = 0
+
+  const useDefault = !delimiter
+  const delimiters = [',', ' ']
+  const delimLen = delimiter?.length || 0
+
+  while (i < str.length) {
+    if (str[i] === '\\') {
+      if (i + 1 < str.length) {
+        current += str[i] + str[i + 1]
+        i += 2
+      } else {
+        current += str[i]
+        i++
+      }
+    } else if (
+      useDefault
+        ? delimiters.includes(str[i])
+        : str.slice(i, i + delimLen) === delimiter
+    ) {
+      result.push(current)
+      current = ''
+      i += useDefault ? 1 : delimLen
+    } else {
+      current += str[i]
+      i++
+    }
+  }
+
+  if (current !== '') 
+    result.push(current)
+
+  return result.map(value => value.trim()).filter(isNotBlank)
 }
 
 export function startsWith(str, mark) {
