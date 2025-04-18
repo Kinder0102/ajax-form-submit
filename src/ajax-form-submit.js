@@ -87,11 +87,6 @@ const DEFAULT_CONFIG = {
   })
 }
 
-const config = createConfig(() => [
-  AjaxFormSubmit.config,
-  
-])
-
 let formSubmitAuto = { all: [] }
 SubmitHandler.add('ajax', requestHelper.request)
 SuccessHandler.add('apply', handleEvent(FORM_EVENT_APPLY))
@@ -106,7 +101,7 @@ class AjaxFormSubmit {
     el => new AjaxFormSubmit(el))
 
   #config
-  #form
+  #root
   #domHelper
   #datasetHelper
   #submitHandler
@@ -116,7 +111,7 @@ class AjaxFormSubmit {
   #additionalData
 
   constructor(root) {
-    this.#form = elementIs(root, 'form') ? root : document.createElement('form')
+    this.#root = elementIs(root, 'form') ? root : document.createElement('form')
     this.config = {}
     this.#config = createConfig(() => [ this.config, AjaxFormSubmit.config, DEFAULT_CONFIG ])
 
@@ -135,11 +130,11 @@ class AjaxFormSubmit {
     this.initAutoSubmit()
     this.initSuccessHandler()
 
-    registerEvent(this.#form, FORM_EVENT_SUBMIT, event => this.submitSync({ event }))
-    registerEvent(this.#form, FORM_EVENT_APPLY, this.#handleApplied.bind(this))
-    registerEvent(this.#form, FORM_EVENT_TRIGGER, this.#handleTriggered.bind(this))
-    registerEvent(this.#form, FORM_EVENT_RESET, this.#handleReset.bind(this))
-    addClass(this.#form, FORM_INIT_CLASS_NAME)
+    registerEvent(this.#root, FORM_EVENT_SUBMIT, event => this.submitSync({ event }))
+    registerEvent(this.#root, FORM_EVENT_APPLY, this.#handleApplied.bind(this))
+    registerEvent(this.#root, FORM_EVENT_TRIGGER, this.#handleTriggered.bind(this))
+    registerEvent(this.#root, FORM_EVENT_RESET, this.#handleReset.bind(this))
+    addClass(this.#root, FORM_INIT_CLASS_NAME)
   }
 
   updateConfig(props) {
@@ -181,41 +176,32 @@ class AjaxFormSubmit {
   }
 
   initAutoSubmit(props) {
+    if (!(this.#datasetHelper.keyToDatasetName('auto') in this.#root.dataset))
+      return this
+
     const parameter = this.#getParameters('auto', { auto: props })[0]
-    if (!isNotBlank(parameter))
-      return
+    const { type, value } = createProperty(parameter)[0]
 
-    let needAuto = false
-    const { type, value, group } = createProperty(parameter)[0]
-    const { exist, value: selectType } = startsWith(type.concat(value)[0], '!')
-    const groupName = group?.[0]
-    
-    switch(selectType) {
-      case 'querystring':
-        needAuto = isNotBlank(location.search) ^ exist
-        break
-      default:
-        needAuto = true
-    }
-
-    if (!exist) {
-      this.#additionalData.querystring ||= {}
-      this.#additionalData.querystring = Object.fromEntries(new URLSearchParams(location.search))
-    }
-
-    if (needAuto) {
-      if (groupName) {
-        formSubmitAuto[groupName] = this
-      } else {
-        formSubmitAuto.all.push(this)
+    if (value.includes('querystring')) {
+      const query = new URLSearchParams(location.search)
+      let result = {}
+      for (const [key, value] of query.entries()) {
+        if (hasValue(result[key])) {
+          result[key] = isArray(result[key]) ? [...result[key], value] : [result[key], value]
+        } else {
+          result[key] = value
+        }
       }
+      this.#additionalData.querystring = result
     }
+
+    formSubmitAuto.all.push(this)
     return this
   }
 
   initSuccessHandler(props) {
     this.successHandler = new SuccessHandler({
-      root: this.#form,
+      root: this.#root,
       handlerProps: props,
       attrKey: 'success',
       domHelper: this.#domHelper,
@@ -283,10 +269,10 @@ class AjaxFormSubmit {
     const submitButtons = []
     const attrName = this.#datasetHelper.keyToAttrName('button')
     const innerSelector = `button[type="submit"], [${attrName}]`
-    const outterSelector = this.#datasetHelper.getValue(this.#form, 'button')
+    const outterSelector = this.#datasetHelper.getValue(this.#root, 'button')
     const buttons = [
       ...querySelector(outterSelector),
-      ...querySelector(innerSelector, this.#form)
+      ...querySelector(innerSelector, this.#root)
         .filter(button => !isNotBlank(button.getAttribute('form')))
     ]
     
@@ -308,7 +294,7 @@ class AjaxFormSubmit {
     for (const [key, { name }] of Object.entries(UI_CONTROLS)) {
       controls[key] = [
         ...querySelector(this.#getParameters(toKebabCase(key))),
-        ...querySelector(`.${name}`, this.#form)
+        ...querySelector(`.${name}`, this.#root)
       ]
     }
     return controls
@@ -317,7 +303,7 @@ class AjaxFormSubmit {
   #handleBefore(request, opt = {}) {
     const middlewareProps = this.#getParameters('middleware-before', opt)
     const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
-    return middleware({ request, root: this.#form}).then(ignored => {
+    return middleware({ request, root: this.#root}).then(ignored => {
       resetUIControls(this.#controls)
       this.successHandler?.before?.(opt.props)
     })
@@ -328,14 +314,14 @@ class AjaxFormSubmit {
     const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
     const fields = new Set()
 
-    !checkFormValidation(this.#form) && fields.add('form')
-    checkHiddenInputValidation(this.#form, request)
+    !checkFormValidation(this.#root) && fields.add('form')
+    checkHiddenInputValidation(this.#root, request)
       .forEach(fields.add, fields)
 
     const attrKey = 'required-group'
     const attrName = this.#datasetHelper.keyToAttrName(attrKey)
     let requiredGroups = {}
-    findFormElem(this.#form, `[${attrName}]`).forEach(elem => {
+    findFormElem(this.#root, `[${attrName}]`).forEach(elem => {
       const groupName = this.#datasetHelper.getValue(elem, attrKey)
       requiredGroups[groupName] ||= []
       requiredGroups[groupName].push(elem)
@@ -345,7 +331,7 @@ class AjaxFormSubmit {
       const groupValid = group.some(elem => {
         const elemName = elem.getAttribute('name')
         let isValid = hasValue(request[elemName]) || isNotBlank(elem.value)
-        isValid ||= querySelector(`[name="${elemName}"]`, this.#form)
+        isValid ||= querySelector(`[name="${elemName}"]`, this.#root)
           .some(input => isNotBlank(input.value))
         return isValid
       })
@@ -354,7 +340,7 @@ class AjaxFormSubmit {
     }
 
     //TODO middleware validation
-    return middleware({ request, root: this.#form}).then(result => {
+    return middleware({ request, root: this.#root}).then(result => {
       toArray(result).filter(isNotBlank).forEach(fields.add, fields)
 
       if (fields.size > 0) {
@@ -376,7 +362,7 @@ class AjaxFormSubmit {
       url: this.#getParameters('action', opt, opt.url)[0],
       enctype: this.#getParameters('enctype', opt)[0],
       csrf: this.#config.get('getCsrfToken')['getCsrfToken']?.(),
-      headers: findFormElem(this.#form, `[${inAttr}="header"]`)
+      headers: findFormElem(this.#root, `[${inAttr}="header"]`)
         .filter(elem => elem.name)
         .map(({ name, value }) => ({ name, value }))
     }
@@ -385,7 +371,7 @@ class AjaxFormSubmit {
     showElements(this.#controls.show)
     hideElements(this.#controls.hide)
     return delay(this.#config.get('delay').delay)
-      .then(ignored => middleware({ request, root: this.#form}))
+      .then(ignored => middleware({ request, root: this.#root}))
       .then(result => hasValue(result?.request) ? result.request : request)
       .then(req => {
         console.log(req)
@@ -403,7 +389,7 @@ class AjaxFormSubmit {
     const middlewareProps = this.#getParameters('middleware-response', opt)
     const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
     
-    return middleware({ request, response, root: this.#form})
+    return middleware({ request, response, root: this.#root})
     .then(result => checkResponse(result.response) ? result : Promise.reject(result.response))
     .then(result => {
       const req = hasValue(result?.request) ? result.request : request
@@ -419,7 +405,7 @@ class AjaxFormSubmit {
     const middlewareProps = this.#getParameters('middleware-after', opt)
     const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
 
-    return middleware({ request, response, root: this.#form}).then(ignored => {
+    return middleware({ request, response, root: this.#root}).then(ignored => {
       const data = getData(response)
       const page = getPage(response)
       const {
@@ -486,13 +472,13 @@ class AjaxFormSubmit {
           const allAttr = `[${attrName}="${key}"]`
           const typeAttr = `[${attrName}-${type}="${key}"]`
 
-          querySelector(`${allAttr},${typeAttr}`, this.#form)
+          querySelector(`${allAttr},${typeAttr}`, this.#root)
             .filter(elem => elem.name)
             .forEach(({ name }) => this.#additionalData.apply[name] = values)
         }
 
       } else if (hasValue(applyData)) {
-        querySelector(`[${attrName}="${FORM_APPLY_CLASS_NAME}-${type}"]`, this.#form)
+        querySelector(`[${attrName}="${FORM_APPLY_CLASS_NAME}-${type}"]`, this.#root)
           .filter(elem => elem.name)
           .forEach(({ name }) => this.#additionalData.apply[name] = valueToString(applyData))
       }
@@ -509,7 +495,7 @@ class AjaxFormSubmit {
     resetUIControls(this.#controls)
     this.successHandler?.before?.()
     this.#pagination?.updatePage?.({})
-    this.#form?.reset()
+    this.#root?.reset()
     this.#clearInputs()
   }
 
@@ -526,16 +512,16 @@ class AjaxFormSubmit {
     if (hasValue(optValue)) {
       result.push(optValue)
     } else {
-      querySelector(inputSelector, this.#form)
+      querySelector(inputSelector, this.#root)
         .map(elem => elem.value)
         .filter(hasValue)
         .forEach(value => result.push(value))
       if (result.length === 0) {
-        const dataAttrValue = this.#datasetHelper.getValue(this.#form, kebabKey)
+        const dataAttrValue = this.#datasetHelper.getValue(this.#root, kebabKey)
         hasValue(dataAttrValue) && result.push(dataAttrValue)
       }
       if (result.length === 0) {
-        const attrValue = this.#form.getAttribute?.(kebabKey)
+        const attrValue = this.#root.getAttribute?.(kebabKey)
         hasValue(attrValue) && result.push(attrValue)
       }
     }
@@ -547,7 +533,7 @@ class AjaxFormSubmit {
   }
 
   #generateFormData(opt = {}) {
-    const form = this.#form
+    const form = this.#root
     const formData = elementIs(form, 'form') ? new FormData(form) : new FormData()
     
     //TODO need finetune
@@ -588,10 +574,10 @@ class AjaxFormSubmit {
 
   #clearInputs() {
     const attrName = this.#datasetHelper.keyToAttrName('clear')
-    findFormElem(this.#form, `[${attrName}]`).forEach(elem => {
+    findFormElem(this.#root, `[${attrName}]`).forEach(elem => {
       elem.value = ''
       const selector = `.${FORM_APPLY_CLASS_NAME}[name="${elem.getAttribute('name')}"]`
-      querySelector(selector, this.#form).forEach(elem => elem.remove())
+      querySelector(selector, this.#root).forEach(elem => elem.remove())
     })
   }
 }
