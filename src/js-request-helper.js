@@ -9,7 +9,7 @@ function request(opt, input, requestParams) {
   const { formData, hasFile } = objectToFormData(input)
   const { method, url, csrf, headers, enctype = '' } = requestParams
   const isWithDataMethod = WITH_DATA_METHOD.includes(method)
-  const param = new URLSearchParams(formData).toString()
+  const param = toQueryString(formData)
   const urlParam = isWithDataMethod ? '' :  `?${param}`
   const processedUrl = addBasePath(`${formatUrl(url, input)}${urlParam}`, basePath)
 
@@ -92,4 +92,10 @@ function objectToFormData(obj) {
   return {
     formData, hasFile
   }
+}
+
+function toQueryString(formData) {
+  return Array.from(new URLSearchParams(formData).entries())
+    .map(([key, value]) => `${encodeURIComponent(key.replace(/\[\]$/, ''))}=${encodeURIComponent(value)}`)
+    .join('&')
 }
