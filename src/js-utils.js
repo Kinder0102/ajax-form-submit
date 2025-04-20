@@ -275,6 +275,9 @@ export function formatUrl(url, parameters) {
 }
 
 export function deepFilterArrays(obj) {
+  if (obj instanceof File || obj instanceof Blob || obj instanceof Date) {
+    return obj
+  }
   if (isArray(obj)) {
     return obj.filter(value => hasValue(value)).map(deepFilterArrays)
   } else if (isObject(obj)) {
