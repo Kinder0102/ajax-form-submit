@@ -1,4 +1,4 @@
-import { assert, isFunction, isNotBlank, toArray, findObjectValue } from './js-utils'
+import { assert, isFunction, isNotBlank, toArray, findObjectValue } from './js-utils.js'
 
 export function createConfig(getSourceCallback) {
   assert(isFunction(getSourceCallback), 0, 'Function')

@@ -8,7 +8,7 @@ import {
   stringToValue,
   valueToString,
   toArray
-} from './js-utils'
+} from './js-utils.js'
 
 let HANDLERS = {
   bypass: { callback: handleBypass, wrapResponse: true },

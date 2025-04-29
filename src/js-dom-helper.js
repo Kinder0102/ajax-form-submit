@@ -16,7 +16,7 @@ import {
   formatDate,
   addBasePath,
   toCamelCase
-} from './js-utils'
+} from './js-utils.js'
 
 import {
   isElement,
@@ -28,15 +28,15 @@ import {
   registerEvent,
   showElements,
   hideElements
-} from './js-dom-utils'
+} from './js-dom-utils.js'
 
 import {
   createProperty,
   createFilter,
   createTemplateHandler
-} from './js-property-factory'
+} from './js-property-factory.js'
 
-import { createDatasetHelper } from './js-dataset-helper'
+import { createDatasetHelper } from './js-dataset-helper.js'
 
 const BASE_PATH = '/'
 const CLASS_NAME = 'dom-helper'

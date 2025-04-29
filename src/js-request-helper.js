@@ -1,4 +1,4 @@
-import { isArray, isNotBlank , addBasePath, formatUrl } from './js-utils'
+import { isArray, isNotBlank , addBasePath, formatUrl } from './js-utils.js'
 
 const WITH_DATA_METHOD = [ 'POST', 'PUT', 'PATCH' ]
 

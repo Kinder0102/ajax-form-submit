@@ -8,10 +8,10 @@ import {
   hasValue,
   toArray,
   split
-} from './js-utils'
+} from './js-utils.js'
 
-import { isElement, querySelector } from './js-dom-utils'
-import { createCache } from './js-cache'
+import { isElement, querySelector } from './js-dom-utils.js'
+import { createCache } from './js-cache.js'
 
 const FORMULA_PATTERN = /(\!?)([\w|\.|\-]+)(\!?[\=|\>|\<]{1}\~?)?([\w|\.|\-|\/|\\]+)?/g
 const cache = createCache()

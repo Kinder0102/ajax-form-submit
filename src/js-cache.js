@@ -1,5 +1,5 @@
-import { assert } from './js-utils'
-import { isElement } from './js-dom-utils'
+import { assert } from './js-utils.js'
+import { isElement } from './js-dom-utils.js'
 
 export function createCache() {
   const cache = new Map()

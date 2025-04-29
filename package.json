@@ -1,7 +1,9 @@
 {
   "name": "ajax-form-submit",
   "version": "1.0.0",
-  "description": "",
+  "description": "A lightweight module for submitting HTML forms via AJAX",
+  "type": "module",
+  "main": "./src/ajax-form-submit.js",
   "exports": {
     ".": "./src/ajax-form-submit.js",
     "./js-utils": "./src/js-utils.js",
@@ -14,6 +16,10 @@
   },
   "scripts": {
     "build": "esbuild ./src/ajax-form-submit.js --outfile=./dist/ajax-form-submit.min.js --bundle --minify --sourcemap"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kinder0102/ajax-form-submit.git"
   },
   "author": "",
   "license": "ISC",

@@ -14,7 +14,7 @@ import {
   toArray,
   findObjectValue,
   deepFilterArrays
-} from './js-utils'
+} from './js-utils.js'
 
 import {
   elementIs,
@@ -29,18 +29,18 @@ import {
   hideElements,
   enableElements,
   disableElements
-} from './js-dom-utils'
+} from './js-dom-utils.js'
 
-import { default as SubmitHandler } from './ajax-form-submit-submit-handler'
-import { default as ResetHandler } from './ajax-form-submit-reset-handler'
-import { default as SuccessHandler, handleEvent } from './ajax-form-submit-success-handler'
-import { createProperty } from './js-property-factory'
-import { createDatasetHelper } from './js-dataset-helper'
-import { createInstanceMap } from './js-cache'
-import { createConfig } from './js-config'
-import DOMHelper from './js-dom-helper'
-import requestHelper from './js-request-helper'
-import MiddlewareFactory from './js-middleware-factory'
+import { default as SubmitHandler } from './ajax-form-submit-submit-handler.js'
+import { default as ResetHandler } from './ajax-form-submit-reset-handler.js'
+import { default as SuccessHandler, handleEvent } from './ajax-form-submit-success-handler.js'
+import { createProperty } from './js-property-factory.js'
+import { createDatasetHelper } from './js-dataset-helper.js'
+import { createInstanceMap } from './js-cache.js'
+import { createConfig } from './js-config.js'
+import DOMHelper from './js-dom-helper.js'
+import requestHelper from './js-request-helper.js'
+import MiddlewareFactory from './js-middleware-factory.js'
 
 const FORM_CLASS_NAME = 'ajax-form-submit'
 const FORM_INIT_CLASS_NAME = `${FORM_CLASS_NAME}-initialized`

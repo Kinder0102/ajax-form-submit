@@ -12,7 +12,7 @@ import {
   stringToValue,
   findObjectValue,
   addBasePath
-} from './js-utils'
+} from './js-utils.js'
 
 import {
   isElement,
@@ -21,9 +21,9 @@ import {
   showElements,
   hideElements,
   getTargets
-} from './js-dom-utils'
+} from './js-dom-utils.js'
 
-import { createProperty } from './js-property-factory'
+import { createProperty } from './js-property-factory.js'
 
 const CLASS_NAME = 'ajax-form-submit-success'
 const SKELETON_CLASS_NAME = `${CLASS_NAME}-skeleton`

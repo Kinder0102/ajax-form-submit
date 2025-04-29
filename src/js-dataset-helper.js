@@ -1,6 +1,6 @@
-import { assert, isNotBlank } from './js-utils'
+import { assert, isNotBlank } from './js-utils.js'
 
-import { isElement } from './js-dom-utils'
+import { isElement } from './js-dom-utils.js'
 
 export function createDatasetHelper(prefix = '') {
   const prefixStr = isNotBlank(prefix) ? prefix : ''

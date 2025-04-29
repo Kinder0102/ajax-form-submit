@@ -2,13 +2,13 @@ import {
   assert,
   isFunction,
   isNotBlank,
-} from './js-utils'
+} from './js-utils.js'
 
 import {
   querySelector,
   triggerEvent,
   stopDefaultEvent,
-} from './js-dom-utils'
+} from './js-dom-utils.js'
 
 let BEFORE_HANDLERS = {
   reset: handleReset,

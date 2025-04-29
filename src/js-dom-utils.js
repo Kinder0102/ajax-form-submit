@@ -7,7 +7,7 @@ import {
   toArray,
   split,
   startsWith
-} from './js-utils'
+} from './js-utils.js'
 
 export function isElement(el) {
   return el instanceof Element || el instanceof DocumentFragment

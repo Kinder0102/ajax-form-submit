@@ -1,5 +1,5 @@
-import { assert, toArray, isObject, isArray, isFunction, isPromise, isNotBlank, isTrue} from './js-utils'
-import { createProperty } from './js-property-factory'
+import { assert, toArray, isObject, isArray, isFunction, isPromise, isNotBlank, isTrue} from './js-utils.js'
+import { createProperty } from './js-property-factory.js'
 
 export default class MiddlewareFactory {
 
