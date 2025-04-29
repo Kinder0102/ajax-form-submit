@@ -32,6 +32,7 @@ import {
 } from './js-dom-utils'
 
 import { default as SubmitHandler } from './ajax-form-submit-submit-handler'
+import { default as ResetHandler } from './ajax-form-submit-reset-handler'
 import { default as SuccessHandler, handleEvent } from './ajax-form-submit-success-handler'
 import { createProperty } from './js-property-factory'
 import { createDatasetHelper } from './js-dataset-helper'
@@ -105,6 +106,7 @@ class AjaxFormSubmit {
   #domHelper
   #datasetHelper
   #submitHandler
+  #resetHandler
   #submitButtons
   #controls
   #pagination
@@ -122,6 +124,7 @@ class AjaxFormSubmit {
     const { basePath } = this.#config.get('basePath')
     this.#domHelper = new DOMHelper({ prefix, basePath })
     this.#submitHandler = this.#initSubmitHandler()
+    this.#resetHandler = new ResetHandler(this.#root)
     this.#submitButtons = this.#initSubmitButtons()
     this.#controls = this.#initUIControls()
     this.#additionalData = {}
@@ -133,7 +136,7 @@ class AjaxFormSubmit {
     registerEvent(this.#root, FORM_EVENT_SUBMIT, event => this.submitSync({ event }))
     registerEvent(this.#root, FORM_EVENT_APPLY, this.#handleApplied.bind(this))
     registerEvent(this.#root, FORM_EVENT_TRIGGER, this.#handleTriggered.bind(this))
-    registerEvent(this.#root, FORM_EVENT_RESET, this.#handleReset.bind(this))
+    registerEvent(this.#root, FORM_EVENT_RESET, this.#handleReset.bind(this), true)
     addClass(this.#root, FORM_INIT_CLASS_NAME)
   }
 
@@ -495,8 +498,8 @@ class AjaxFormSubmit {
     resetUIControls(this.#controls)
     this.successHandler?.before?.()
     this.#pagination?.updatePage?.({})
-    this.#root?.reset()
-    this.#clearInputs()
+    const props = createProperty(this.#datasetHelper.getValue(this.#root, 'reset'))[0]
+    this.#resetHandler.run(props)
   }
 
   #getParameters(key, opt, defaultValue) {
