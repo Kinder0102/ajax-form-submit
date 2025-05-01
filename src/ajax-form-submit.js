@@ -108,6 +108,7 @@ class AjaxFormSubmit {
   #submitHandler
   #resetHandler
   #submitButtons
+  #resetButtons
   #controls
   #pagination
   #additionalData
@@ -126,6 +127,7 @@ class AjaxFormSubmit {
     this.#submitHandler = this.#initSubmitHandler()
     this.#resetHandler = new ResetHandler(this.#root)
     this.#submitButtons = this.#initSubmitButtons()
+    this.#resetButtons = this.#initResetButtons()
     this.#controls = this.#initUIControls()
     this.#additionalData = {}
     
@@ -244,8 +246,7 @@ class AjaxFormSubmit {
           case 'VALIDATION':
             break
           case 'CONFIRM':
-            enableElements(this.#submitButtons)
-            resetUIControls(this.#controls)
+            this.#resetUIControls()
             break
           default:
             this.#handleError(error)
@@ -292,6 +293,10 @@ class AjaxFormSubmit {
     return submitButtons
   }
 
+  #initResetButtons() {
+    return querySelector(`button[type="reset"]`, this.#root)
+  }
+
   #initUIControls() {
     let controls = {}
     for (const [key, { name }] of Object.entries(UI_CONTROLS)) {
@@ -307,7 +312,7 @@ class AjaxFormSubmit {
     const middlewareProps = this.#getParameters('middleware-before', opt)
     const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
     return middleware({ request, root: this.#root}).then(ignored => {
-      resetUIControls(this.#controls)
+      this.#resetUIControls()
       this.successHandler?.before?.(opt.props)
     })
   }
@@ -371,13 +376,13 @@ class AjaxFormSubmit {
     }
 
     disableElements(this.#submitButtons)
+    disableElements(this.#resetButtons)
     showElements(this.#controls.show)
     hideElements(this.#controls.hide)
     return delay(this.#config.get('delay').delay)
       .then(ignored => middleware({ request, root: this.#root}))
       .then(result => hasValue(result?.request) ? result.request : request)
       .then(req => {
-        console.log(req)
         this.successHandler?.request?.(opt.props, req)
         return this.#submitHandler.run(type, opt, req, requestParams)
           .then(res => ({ request: req, response: res }))
@@ -398,7 +403,7 @@ class AjaxFormSubmit {
       const req = hasValue(result?.request) ? result.request : request
       const res = hasValue(result?.response) ? result.response : response
       triggerEvent(this.#controls.progress, FORM_EVENT_UPLOAD_STOP)
-      resetUIControls(this.#controls)
+      this.#resetUIControls()
       return { request: req, response: res }
     })
   }
@@ -422,7 +427,6 @@ class AjaxFormSubmit {
       this.successHandler?.after?.(opt.props, request, data)
       this.#clearInputs()
       showElements(this.#controls.messageSuccess)
-      enableElements(this.#submitButtons)
       return response
     })
   }
@@ -430,8 +434,7 @@ class AjaxFormSubmit {
   #handleError(error, opt = {}) {
     console.error(error)
     const { getError } = this.#config.get(['response.getError'])
-    enableElements(this.#submitButtons)
-    resetUIControls(this.#controls)
+    this.#resetUIControls()
     triggerEvent(this.#controls.progress, FORM_EVENT_UPLOAD_STOP)
 
     const updatedError = { ...error, message: getError(error) }
@@ -495,7 +498,7 @@ class AjaxFormSubmit {
   }
 
   #handleReset(event) {
-    resetUIControls(this.#controls)
+    this.#resetUIControls()
     this.successHandler?.before?.()
     this.#pagination?.updatePage?.({})
     const props = createProperty(this.#datasetHelper.getValue(this.#root, 'reset'))[0]
@@ -582,6 +585,14 @@ class AjaxFormSubmit {
       const selector = `.${FORM_APPLY_CLASS_NAME}[name="${elem.getAttribute('name')}"]`
       querySelector(selector, this.#root).forEach(elem => elem.remove())
     })
+  }
+
+  #resetUIControls() {
+    enableElements(this.#submitButtons)
+    enableElements(this.#resetButtons)
+    for (const [key, elements] of Object.entries(this.#controls)) {
+      UI_CONTROLS[key]?.hide ? showElements(elements) : hideElements(elements)
+    }
   }
 }
 
@@ -760,12 +771,6 @@ function classifyMessageControl(controls) {
     }
   })
   return { inputMessage, outputMessage, pageMessage }
-}
-
-function resetUIControls(controls) {
-  for (const [key, elements] of Object.entries(controls)) {
-    UI_CONTROLS[key]?.hide ? showElements(elements) : hideElements(elements)
-  }
 }
 
 function isFormData(formData) {
