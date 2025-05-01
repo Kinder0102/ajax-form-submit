@@ -1,4 +1,4 @@
-import { isArray, isNotBlank , addBasePath, formatUrl } from './js-utils.js'
+import { isArray, isNotBlank, objectEntries, addBasePath, formatUrl } from './js-utils.js'
 
 const WITH_DATA_METHOD = [ 'POST', 'PUT', 'PATCH' ]
 
@@ -7,9 +7,11 @@ export default { request }
 function request(opt, input, requestParams) {
   const { basePath, handleProgress, createResponse } = opt
   const { formData, hasFile } = objectToFormData(input)
-  const { method, url, csrf, headers, enctype = '' } = requestParams
-  const isWithDataMethod = WITH_DATA_METHOD.includes(method)
-  const param = toQueryString(formData)
+  const { method = 'POST', url, csrf, headers = {}, enctype = '' } = requestParams
+  const isWithDataMethod = WITH_DATA_METHOD.includes(method.toUpperCase())
+  const param = Array.from(new URLSearchParams(formData).entries())
+    .map(([key, value]) => `${encodeURIComponent(key.replace(/\[\]$/, ''))}=${encodeURIComponent(value)}`)
+    .join('&')
   const urlParam = isWithDataMethod ? '' :  `?${param}`
   const processedUrl = addBasePath(`${formatUrl(url, input)}${urlParam}`, basePath)
 
@@ -27,45 +29,37 @@ function request(opt, input, requestParams) {
     }
   }
 
-  const fetchOptions = {
-    method: method.toUpperCase(),
-    headers: {},
-    body: isWithDataMethod ? body : undefined,
-  }
-
-  headers.forEach(({ name, value }) => fetchOptions.headers[name] = value)
   if (contentType) 
-    fetchOptions.headers['Content-Type'] = contentType
+    headers['Content-Type'] = contentType
   if (isNotBlank(csrf?.header) && isNotBlank(csrf?.token))
-    fetchOptions.headers[csrf.header] = csrf.token
+    headers[csrf.header] = csrf.token
 
   return new Promise((resolve, reject) => {
-    if (handleProgress && hasFile) {
-      const xhr = new XMLHttpRequest()
-      xhr.upload.addEventListener('progress', handleProgress)
-      xhr.addEventListener('progress', handleProgress)
-      xhr.addEventListener('load', () => resolve(JSON.parse(xhr.response)))
-      xhr.addEventListener('error', () => {
-        const { status, statusText } = xhr
-        reject({ status, statusText })
-      })
-      xhr.open(fetchOptions.method, processedUrl, true)
-      for (const [key, value] of Object.entries(fetchOptions.headers)) {
-        xhr.setRequestHeader(key, value)
+    const xhr = new XMLHttpRequest()
+    xhr.open(method, processedUrl, true)
+    xhr.upload.addEventListener('progress', handleProgress)
+    xhr.addEventListener('progress', handleProgress)
+    xhr.addEventListener('error', () => reject(({ status, responseText: message } = xhr)))
+    // xhr.onabort = () => reject(new Error('Request aborted'));
+    xhr.addEventListener('load', () => {
+      const { status, responseURL, responseText } = xhr
+      if (status >= 200 && status < 300) {
+        if (responseURL && responseURL !== new URL(processedUrl, location.href).href) {
+          location.href = responseURL
+          resolve(createResponse())
+        } else {
+          resolve(JSON.parse(xhr.responseText))
+        }
+      } else {
+        reject({ status, message: responseText })
       }
-      xhr.send(fetchOptions.body)
-    } else {
-      fetch(processedUrl, fetchOptions)
-        .then(response => {
-          if (response.redirected) {
-            window && (window.location.href = response.url)
-            resolve(createResponse())
-          } else {
-            resolve(response.json())
-          }
-        })
-        .catch(error => reject(error))
+    })
+
+    for (const [key, value] of objectEntries(headers)) {
+      xhr.setRequestHeader(key, value)
     }
+
+    xhr.send(body)
   })
 }
 
@@ -73,7 +67,7 @@ function objectToFormData(obj) {
   const formData = new FormData()
   let hasFile = false
 
-  for (const [key, value] of Object.entries(obj)) {
+  for (const [key, value] of objectEntries(obj)) {
     hasFile ||= (value instanceof Blob)
     if (isArray(value)) {
       let realKey = `${key}[]`
@@ -92,10 +86,4 @@ function objectToFormData(obj) {
   return {
     formData, hasFile
   }
-}
-
-function toQueryString(formData) {
-  return Array.from(new URLSearchParams(formData).entries())
-    .map(([key, value]) => `${encodeURIComponent(key.replace(/\[\]$/, ''))}=${encodeURIComponent(value)}`)
-    .join('&')
 }

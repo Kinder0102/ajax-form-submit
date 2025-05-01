@@ -1,3 +1,4 @@
+import { OBJECT, FUNCTION, ARRAY, STRING_NON_BLANK, HTML_ELEMENT } from './js-constant.js'
 import {
   assert,
   hasValue,
@@ -30,59 +31,45 @@ import {
   hideElements
 } from './js-dom-utils.js'
 
-import {
-  createProperty,
-  createFilter,
-  createTemplateHandler
-} from './js-property-factory.js'
-
 import { createDatasetHelper } from './js-dataset-helper.js'
+import { createProperty, createFilter, createTemplateHandler } from './js-property-factory.js'
+import { createCache } from './js-cache.js'
 
 const BASE_PATH = '/'
 const CLASS_NAME = 'dom-helper'
 const CREATE_CLASS_NAME = `${CLASS_NAME}-create`
 const FILLED_CLASS_NAME = `${CLASS_NAME}-filled`
-const REMOVE_CLASS_NAME = `${CLASS_NAME}-remove`
 const INDEX = `${CLASS_NAME}-index`
 const SEQ_NAME = `${CLASS_NAME}-seq`
 const VALUE_NAME = `${CLASS_NAME}-value`
-const ATTR_IGNORE_KEYS = [ 'format', 'enum', 'value-type', 'value-empty' ]
+const ATTR_IGNORE_KEYS = [ 'format', 'enum', 'value-type' ]
 const ATTR_BOOLEAN_KEYS = [ 'disabled' ]
-
+const TEMPLATE_KEY = 'template'
+const ELEMENT_CACHE = createCache()
 
 let SET_VALUE_HANDLERS = {
-  input: (el, value, props) => {
-    if (el.getAttribute('type') === 'checkbox') {
-      if (isTrue(value)) {
-        el.setAttribute('checked', 'checked')
-      } else {
-        el.removeAttribute('checked')
-      }
-    } else {
-      el.value = value
-    }
-  },
+  input: (el, value, props) => el.type === 'checkbox' ? (el.checked = isTrue(value)) : (el.value = value),
   select: (el, value, props) => el.value = value,
   a: (el, value, props) => el.setAttribute('href', addBasePath(value, props.basePath)),
   img: (el, value, props) => el.setAttribute('src', value),
   iframe: (el, value, props) => el.setAttribute('src', value),
   object: (el, value, props) => el.setAttribute('data', value),
   form: (el, value, props) => el.setAttribute('action', addBasePath(value, props.basePath)),
+  fallback: (el, value) => el.textContent = value
 }
 
 let GENERATE_VALUE_HANDLERS = {
   date: (values, { format, valueTypeFormat }) =>
-    processString(format, values.map(value => formatDate(value, valueTypeFormat))),
+    formatString(format, values.map(value => formatDate(value, valueTypeFormat))),
   string: (values, { format, enums }) =>
-    processString(format, processEnum(enums, values)),
+    formatString(format, processEnum(enums, values)),
   image: (values, { format, enums }) =>
-    processString(format, processEnum(enums, processImage(values, valueTypeFormat))),
-  number: (values, { format, enums, valueTypeFormat }) => {
-    const number = processNumber(values.reduce((a, b) => a + Number(b), 0), valueTypeFormat)
-    return processString(format, processEnum(enums, number))
-  },
+    formatString(format, processEnum(enums, processImage(values, valueTypeFormat))),
+  number: (values, { format, enums, valueTypeFormat }) =>
+    formatString(format, processEnum(enums, processNumber(values.reduce((a, b) => a + Number(b), 0), valueTypeFormat))),
   percentage: (values, { format, enums }) =>
     processEnum(enums, `${formatNumber((values.reduce((a, b) => a + Number(b), 0) * 100), format)}%`),
+  fallback: (values, props) => processEnum(props.enums, values).join()
 }
 
 export default class DOMHelper {
@@ -98,228 +85,213 @@ export default class DOMHelper {
   }
 
   setValueToElement(el, value, opts = {}) {
-    const { template } = opts
-    assert(isElement(el), 1, 'HTMLElement')
-    
-    const templateProp = getTemplateSelector(el, template, this.#datasetHelper)
-    if (isArray(value) || isNotBlank(templateProp)) {
-      this.setArrayToElement(el, toArray(value), { template: templateProp })
-    } else if (hasValue(value)) {
-      this.setDisplay(el, value)
-      const { keyToAttrName } = this.#datasetHelper
-      const valueKey = 'value'
-      const valueElems = querySelector(`[${keyToAttrName(valueKey)}]`, el, true)
-      const classKey = 'class'
-      const classElems = querySelector(`[${keyToAttrName(classKey)}]`, el, true)
-      const attrKey = 'attr'
-      const attrElems = querySelector('*', el, true)
+    assert(isElement(el), 1, HTML_ELEMENT)
 
-      attrElems.forEach(elem => this.#datasetHelper.getKeys(elem, attrKey)
-        .filter(({ key }) => !ATTR_IGNORE_KEYS.some(attr => key === attr))
-        .forEach(({ key }) => this.fillElement(elem, value, key, this.setAttr.bind(this))))
-      classElems.forEach(elem => this.fillElement(elem, value, classKey, this.setClass.bind(this)))
-      valueElems.forEach(elem => this.fillElement(elem, value, valueKey, this.setValue.bind(this)))
+    const { template, group = 'item' } = opts
+    const { getValue } = this.#datasetHelper
+    const templateProp = template || getValue(el, TEMPLATE_KEY)
+    
+    if (isArray(value) || isNotBlank(templateProp)) {
+      const result = this.#setArrayToElement(el, toArray(value), templateProp)
+      const { empty: [empty] = [] } = createProperty(getValue(el, TEMPLATE_KEY))[0]
+      ELEMENT_CACHE.set(el, (elements = {}) => {
+        elements[group] ||= []
+        result.forEach(elem => elements[group].push(elem))
+        if (result.length === 0 && isNotBlank(empty))
+          elements[group].push(...this.#setArrayToElement?.(el, [{}], empty))
+        return elements
+      })
+    } else {
+      this.#setValueToElement(el, value)
     }
   }
 
-  setArrayToElement(el, arr, opts = {}) {
-    assert(isElement(el), 1, 'HTMLElement')
-    assert(isArray(arr), 2, 'Array')
+  clearElement(el, group = 'item') {
+    assert(isElement(el), 1, HTML_ELEMENT)
+    ELEMENT_CACHE.set(el, (elements = {}) => {
+      elements[group] ||= []
+      elements[group].forEach(elem => {
+        elem?.remove?.()
+        querySelector(`.${FILLED_CLASS_NAME}`, elem, true).forEach(fill => this.#setValue(fill, ''))
+      })
+      elements[group].length = 0
+      return elements
+    })
+    if (group === 'item')
+      this.#datasetHelper.setValue(el, 'array-seq', 0)
+  }
 
-    if (el.hasAttribute?.(this.#datasetHelper.keyToAttrName('array-length'))) {
-      this.setValue(el, [ arr.length ])
+  #setValueToElement(el, value) {
+    if (!hasValue(value))
       return
+    this.#setDisplay(el, value)
+    const { getKeys, keyToAttrName } = this.#datasetHelper
+    const attrKey = 'attr'
+    const attrElems = querySelector('*', el, true)
+    const classKey = 'class'
+    const classElems = querySelector(`[${keyToAttrName(classKey)}]`, el, true)
+    const valueKey = 'value'
+    const valueElems = querySelector(`[${keyToAttrName(valueKey)}]`, el, true)
+
+    attrElems.forEach(elem => getKeys(elem, attrKey)
+      .filter(({ key }) => !ATTR_IGNORE_KEYS.some(attr => key === attr))
+      .forEach(({ key }) => this.#fillElement(elem, value, key, this.#setAttr.bind(this))))
+    classElems.forEach(elem => this.#fillElement(elem, value, classKey, this.#setClass.bind(this)))
+    valueElems.forEach(elem => this.#fillElement(elem, value, valueKey, this.#setValue.bind(this)))
+  }
+
+  #setArrayToElement(el, arr, template) {
+    const result = []
+    const { getValue, setValue, keyToDatasetName } = this.#datasetHelper
+
+    if (keyToDatasetName('array-length') in el.dataset) {
+      this.#setValue(el, arr.length)
+      return result
     }
 
-    const { template } = opts
-    const templateProp = getTemplateSelector(el, template, this.#datasetHelper)
-    const indexKey = { first: 0, last: arr.length - 1 }
-    const arrayIndexKey = this.#datasetHelper.getValue(el, 'array-index')
-    const arrayIndex = indexKey[arrayIndexKey] ?? arrayIndexKey
-    const valueName = this.#datasetHelper.getValue(el, 'array-value')
-    const emptyTemplate = this.#datasetHelper.getValue(el, 'value-empty')
-    const dataArray = (hasValue(arrayIndex) ? [ arr[arrayIndex] ] : arr).filter(hasValue)
-    let arraySeq = parseInt(this.#datasetHelper.getValue(el, 'array-seq')) || 0
+    const templateProp = template || getValue(el, TEMPLATE_KEY)
+    const valueName = getValue(el, 'array-value')
+    let arraySeq = parseInt(getValue(el, 'array-seq')) || 0
 
-    dataArray.forEach((data, index) => {
-      let objValue = isObject(data) ? data : { [VALUE_NAME]: data }
-      objValue[SEQ_NAME] = arraySeq
-      const indexData = { ...objValue, [INDEX]: index }
-      const { value } = findObjectValue(indexData, valueName)
+    getArray(arr, getValue(el, 'array-index')).forEach((data, index) => {
+      const objValue = isObject(data) ? data : { [VALUE_NAME]: data }
+      const indexdData = { ...objValue, [INDEX]: index, [SEQ_NAME]: arraySeq }
+      const { value } = findObjectValue(indexdData, valueName)
       if (isArray(value)) {
         const fragment = document.createDocumentFragment()
-        this.setArrayToElement(fragment, value, { template: templateProp })
+        this.#setArrayToElement(fragment, value, templateProp)
         el.append(fragment)
+        result.push(fragment)
       } else {
-        this.appendElement(el, value, templateProp)
+        result.push(this.#appendElement(el, value, templateProp))
       }
       arraySeq += 1
-      this.#datasetHelper.setValue(el, 'array-seq', arraySeq)
+      setValue(el, 'array-seq', arraySeq)
     })
-
-    if (arraySeq === 0 && isNotBlank(emptyTemplate)) {
-      this.appendElement(el, null, emptyTemplate)
-    }
+    return result.filter(hasValue)
   }
 
-  appendElement(el, data, templateProp) {
-    assert(isElement(el), 1, 'HTMLElement')
-
+  #appendElement(el, data, template) {
     if (elementIs(el, ['input', 'select'])) {
       el.value = data
-      return el
     } else {
-      const newElem = this.createElement(data, createTemplate(templateProp, {
-        datasetHelper: this.#datasetHelper,
-        parent: el,
-        data: data,
-        withDefault: true,
-        preventClone: true
-      }))
-      isElement(newElem) && el.append(newElem)
-      return newElem
+      const elem = createTemplateHandler(template).getTemplate(data)
+      this.setValueToElement(elem, data)
+      if (!elem._removed) {
+        addClass(elem, CREATE_CLASS_NAME)
+        el.append(elem)
+        return elem
+      }
     }
   }
 
-  createElement(data, templateProp) {
-    let newElem = createTemplate(templateProp)
-
-    assert(isElement(newElem), `template not found: ${templateProp}`)
-
-    addClass(newElem, CREATE_CLASS_NAME)
-    this.setValueToElement(newElem, data)
-
-    if (!hasClass(newElem, REMOVE_CLASS_NAME))
-      return newElem
-  }
-
-  clearElement(el) {
-    assert(isElement(el), 1, 'HTMLElement')
-    querySelector(`.${CREATE_CLASS_NAME}`, el, true).forEach(elem => elem.remove())
-    querySelector(`.${FILLED_CLASS_NAME}`, el, true).forEach(elem => this.setValue(elem, ['']))
-    this.#datasetHelper.setValue(el, 'array-seq', 0)
-  }
-
-  fillElement(el, obj, datasetName, handler) {
-    assert(isElement(el), 1, 'HTMLElement')
-    assert(isObject(obj), 2, 'Object')
-    assert(isNotBlank(datasetName), 3, 'NonBlankString')
-    assert(isFunction(handler), 4, 'Function')
-
-    const attrValue = this.#datasetHelper.getValue(el, datasetName, '')
-    const keys = split(attrValue, ',')
-
-    if (keys.length === 0) {
-      return
-    } else if (keys.length === 1) {
-      const { value: selectValue } = findObjectValue(obj, keys[0])
-      if (isArray(selectValue)) {
-        this.setArrayToElement(el, selectValue)
-      } else {
-        handler(el, [ selectValue ], datasetName)
-      }
-    } else {
-      const values = keys
-        .map(key => findObjectValue(obj, key).value)
-        .map(valueToString)
-      handler(el, values, datasetName)
-    }  
-  }
-
-  setDisplay(el, data) {
-    assert(isElement(el), 1, 'HTMLElement')
-
+  #setDisplay(el, data) {
     const { keyToAttrName, getValue } = this.#datasetHelper
-    const hiddenKey = 'hidden'
-    querySelector(`[${keyToAttrName(hiddenKey)}]`, el, true).forEach(elem => {
-      const filter = createFilter(getValue(elem, hiddenKey))
-      const result = filter.attributes.reduce((isValid, attribute) => {
-        return isValid && filter.filter(attribute, findObjectValue(data, attribute).value)
-      }, true)
 
-      if (result) {
-        hideElements(elem)
-      } else {
-        showElements(elem)
-      }
-    })
+    const hiddenKey = 'hidden'
+    querySelector(`[${keyToAttrName(hiddenKey)}]`, el, true).forEach(elem =>
+      reduceFilter(data, getValue(elem, hiddenKey)) ? hideElements(elem) : showElements(elem))
 
     const filterKey = 'filter'
     querySelector(`[${keyToAttrName(filterKey)}]`, el, true).forEach(elem => {
-      const filter = createFilter(getValue(elem, filterKey))
-      const result = filter.attributes.reduce((isValid, attribute) => {
-        return isValid && filter.filter(attribute, findObjectValue(data, attribute).value)
-      }, true)
-
-      if (!result) {
+      if (!reduceFilter(data, getValue(elem, filterKey))) {
         elem.remove()
-        addClass(elem, REMOVE_CLASS_NAME)
+        elem._removed = true
       }
     })
   }
 
-  setClass(el, classNames) {
-    assert(isElement(el), 1, 'HTMLElement')
+  #fillElement(el, obj, datasetName, handler) {
+    const attrValue = this.#datasetHelper.getValue(el, datasetName, '')
+    const { value: keys } = createProperty(attrValue)[0]
+    const arrayValues = []
+    const values = []
+    keys.forEach(key => {
+      const { exist, value } = findObjectValue(obj, key)
+      if (!exist) {
+      } else if (isArray(value)) {
+        arrayValues.push(value)
+      } else {
+        values.push(valueToString(value))
+      }
+    })
+    handler(el, values, arrayValues, datasetName)
+  }
 
+  #setClass(el, value, arrayValues) {
     const enums = this.#datasetHelper.getValue(el, 'class-enum')
-    const valueFormat = this.generateValue(classNames, { enums })
+    const valueFormat = this.#generateValue(value, { enums })
     split(valueFormat).filter(isNotBlank).forEach(value => addClass(el, value))
   }
 
-  setAttr(el, values, attrName) {
-    assert(isElement(el), 1, 'HTMLElement')
+  #setAttr(el, value, arrayValues, attrName) {
     //TODO attr case insensitive
     let tag = attrName.replace('attr-', '')
-    const valueFormat = this.generateValue(values, {
-      format: this.#datasetHelper.getValue(el, `attr-${tag}-format`),
-      valueType: this.#datasetHelper.getValue(el, `attr-${tag}-type`),
-      valueTypeFormat: this.#datasetHelper.getValue(el, `attr-${tag}-type-format`),
-      enums: this.#datasetHelper.getValue(el, `attr-${tag}-enum`)
+    const { getValue } = this.#datasetHelper
+    const valueFormat = this.#generateValue(value, {
+      format: getValue(el, `attr-${tag}-format`),
+      valueType: getValue(el, `attr-${tag}-type`),
+      valueTypeFormat: getValue(el, `attr-${tag}-type-format`),
+      enums: getValue(el, `attr-${tag}-enum`)
     })
 
-    if (hasValue(valueFormat)) {
-      if (!tag.includes('data-'))
-        tag = toCamelCase(tag)
+    if (!hasValue(valueFormat))
+      return
 
-      if (ATTR_BOOLEAN_KEYS.includes(tag)) {
-        if (isTrue(valueFormat))
-          el.toggleAttribute(tag)
-      } else {
-        el.setAttribute(tag, valueFormat)
-      }
+    if (!tag.includes('data-'))
+      tag = toCamelCase(tag)
+
+    if (ATTR_BOOLEAN_KEYS.includes(tag)) {
+      if (isTrue(valueFormat))
+        el.toggleAttribute(tag)
+    } else {
+      el.setAttribute(tag, valueFormat)
     }
   }
 
-  setValue(el, values) {
-    assert(isElement(el), 1, 'HTMLElement')
+  #setValue(el, value, arrayValues) {
+    if (arrayValues?.length > 0) {
+      arrayValues.forEach(value => this.#setArrayToElement(el, value))
+    } else {
+      addClass(el, FILLED_CLASS_NAME)
+      const { getValue } = this.#datasetHelper
+      const valueFormat = this.#generateValue(value, {
+        format: getValue(el, 'value-format'),
+        valueType: getValue(el, 'value-type'),
+        valueTypeFormat: getValue(el, 'value-type-format'),
+        enums: getValue(el, 'value-enum')
+      })
 
-    addClass(el, FILLED_CLASS_NAME)
-    const valueFormat = this.generateValue(values, {
-      format: this.#datasetHelper.getValue(el, 'value-format'),
-      valueType: this.#datasetHelper.getValue(el, 'value-type'),
-      valueTypeFormat: this.#datasetHelper.getValue(el, 'value-type-format'),
-      enums: this.#datasetHelper.getValue(el, 'value-enum')
-    })
-
-    if (hasValue(valueFormat)) {
-      let handler = SET_VALUE_HANDLERS[el.tagName?.toLowerCase()]
-      handler ||= ((el, value) => el.textContent = valueFormat)
+      if (!hasValue(valueFormat))
+        return
+      const handler = SET_VALUE_HANDLERS[el.tagName?.toLowerCase()] || SET_VALUE_HANDLERS.fallback
       handler(el, valueFormat, { basePath: this.#basePath })
     }
   }
 
-  generateValue(values, { valueType = 'string', ...props }) {
-    const validValues = values.filter(value => hasValue(value))
-    if (validValues.length === 0)
-      return
-    let handler = GENERATE_VALUE_HANDLERS[valueType]
-    handler ||= ((values, props) => processEnum(props.enums, values).join())
-    return handler(validValues, props)
+  #generateValue(value, { valueType = 'string', ...props }) {
+    const values = toArray(value)
+    const handler = GENERATE_VALUE_HANDLERS[valueType] || GENERATE_VALUE_HANDLERS.fallback
+    return values.length === 0 ? null : handler(values, props)
   }
 }
 
-function processString(format, args = []) {
-  return formatString(format, args) || args.join?.() || args
+function getArray(arr, index) {
+  if (!isArray(arr))
+    return []
+  if (hasValue(index)) {
+    return toArray((index === 'first') ? arr[0] : (index === 'last') ? arr[arr.length - 1] : arr[index])
+  } else {
+    return arr
+  }
+}
+
+function reduceFilter(data, props) {
+  const filter = createFilter(props)
+  return filter.keys.reduce((isValid, key) => {
+    const { exist, value } = findObjectValue(data, key)
+    return exist ? isValid && filter.filter(key, value) : isValid
+  }, true)
 }
 
 function processNumber(input, valueTypeFormat) {
@@ -335,13 +307,7 @@ function processImage(inputs, valueTypeFormat) {
   const format = createProperty(valueTypeFormat)[0]
   const value = format.value[0]
   const pattern = format.pattern?.[0] || /\.\w+$/
-  return inputs.map(input => {
-    if (isNotBlank(value)) {
-      return input.replace(pattern, `${value}$&`)
-    } else {
-      return input
-    }
-  })
+  return inputs.map(input => isNotBlank(value) ? input.replace(pattern, `${value}$&`) : input)
 }
 
 function processEnum(enums, args = []) {
@@ -355,31 +321,6 @@ function processEnum(enums, args = []) {
   } else {
     return args
   }
-}
-
-function getTemplateSelector(el, value, datasetHelper) {
-  if (datasetHelper)
-    return value || datasetHelper.getValue(el, 'template')
-  return value
-}
-
-function createTemplate(templateProp, opts = {}) {
-  const { parent, data, datasetHelper, withDefault, preventClone } = opts
-  let templateElem
-
-  if (isElement(templateProp)) {
-    templateElem = preventClone ? templateProp : templateProp.cloneNode(true)
-  } else {
-    const templateSelector = getTemplateSelector(parent, templateProp, datasetHelper)
-    templateElem = createTemplateHandler(templateProp).getTemplate()
-  }
-
-  if (!isElement(templateElem) && withDefault) {
-    templateElem = document.createElement('span')
-    templateElem.value = data
-    templateElem.textContent = data
-  }
-  return templateElem
 }
 
 function createEnums(props) {
@@ -405,13 +346,13 @@ function createEnums(props) {
         } else if (elementIs(el, 'select')) {
           querySelector('option', el).forEach(elem => {
             enums[elem.value] = elem.textContent
-          })      
+          })
         }
       } else {
         enums = createProperty(props)[0]
       }
     }
   }
- 
+
   return result
 }

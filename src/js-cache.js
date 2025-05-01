@@ -1,32 +1,35 @@
-import { assert } from './js-utils.js'
+import { HTML_ELEMENT } from './js-constant.js'
+import { assert, isFunction } from './js-utils.js'
 import { isElement } from './js-dom-utils.js'
 
 export function createCache() {
   const cache = new Map()
   return {
-    set: (key, value) => {
-      cache.set(key, value)
+    has: key => {
+      return cache.has(key)
     },
     get: key => {
       return cache.get(key)
-    }
+    },
+    set: (key, value) => {
+      isFunction(value) ? cache.set(key, value(cache.get(key))) : cache.set(key, value)
+    },
   }
 }
 
 export function createInstanceMap(conditionCallback, createCallback) {
-  const instanceMap = new Map()
+  const instanceMap = createCache()
   return {
     create: (el) => {
-      assert(isElement(el), 1, 'HTMLElement')
+      assert(isElement(el), 1, HTML_ELEMENT)
       if (!conditionCallback(el))
         return
-      const instance = instanceMap.get(el)
-      if (!instance)
+      if (!instanceMap.has(el))
         instanceMap.set(el, createCallback(el))
       return instanceMap.get(el)
     },
     get: el => {
-      assert(isElement(el), 1, 'HTMLElement')
+      assert(isElement(el), 1, HTML_ELEMENT)
       return instanceMap.get(el)
     }
   }

@@ -1,4 +1,5 @@
-import { assert, toArray, isObject, isArray, isFunction, isPromise, isNotBlank, isTrue} from './js-utils.js'
+import { STRING_NON_BLANK, FUNCTION, ERROR_CONFIRM } from './js-constant.js'
+import { assert, toArray, isObject, isFunction, isPromise, isNotBlank, isTrue } from './js-utils.js'
 import { createProperty } from './js-property-factory.js'
 
 export default class MiddlewareFactory {
@@ -8,25 +9,25 @@ export default class MiddlewareFactory {
   constructor() {
     this.#middlewares = {
       alert: ({ text, title }) => alert(text),
-      confirm: ({ text, title }) => (confirm(text) ? Promise.resolve() : Promise.reject(new Error('CONFIRM'))),
+      confirm: ({ text, title }) => (confirm(text) ? Promise.resolve() : Promise.reject(new Error(ERROR_CONFIRM))),
       prompt: input => {
-        const { text, title, name } = input
+        const { text, name } = input
         const result = prompt(text)
-        return result ? Promise.resolve({ [name]: result, ...input }) : Promise.reject(new Error('CONFIRM'))
+        return result ? Promise.resolve({ [name]: result, ...input }) : Promise.reject(new Error(ERROR_CONFIRM))
       },
       error: err => this.#middlewares.alert({ text: err.message })
     }
   }
 
   add(name, callback) {
-    assert(isNotBlank(name), 1, 'NonBlankString')
-    assert(isFunction(callback), 2, 'Function')
+    assert(isNotBlank(name), 1, STRING_NON_BLANK)
+    assert(isFunction(callback), 2, FUNCTION)
     this.#middlewares[name] = callback
     return this
   }
 
   get(name) {
-    assert(isNotBlank(name), 1, 'NonBlankString')
+    assert(isNotBlank(name), 1, STRING_NON_BLANK)
     return this.#middlewares[name]
   }
 
@@ -34,6 +35,8 @@ export default class MiddlewareFactory {
     let result = []
     for (const prop of createProperty(props)) {
       const { type: [selectType], skip: skipProps, value, ...params } = prop
+      if (!isNotBlank(selectType))
+        continue
       const skip = wrapSkip(skipProps)
       const callback = this.#middlewares[selectType]
       assert(isFunction(callback), `Could not find "${selectType}" in middlewares`)

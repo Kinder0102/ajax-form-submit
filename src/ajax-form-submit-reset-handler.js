@@ -1,53 +1,45 @@
-import {
-  assert,
-  isFunction,
-  isNotBlank,
-} from './js-utils.js'
+import { STRING_NON_BLANK, FUNCTION } from './js-constant.js'
+import { assert, isFunction, isNotBlank } from './js-utils.js'
+import { querySelector, triggerEvent } from './js-dom-utils.js'
 
-import {
-  querySelector,
-  triggerEvent,
-  stopDefaultEvent,
-} from './js-dom-utils.js'
-
-let BEFORE_HANDLERS = {
-  reset: handleReset,
-  clear: handleClear
-}
-
-let AFTER_HANDLERS = {
-  submit: handleSubmit
-}
+let HANDLERS_BEFORE = { clear }
+let HANDLERS_AFTER = { submit }
 
 export default class AjaxFormSubmitResetHandler {
 
-  static add = (type, callback, after) => {
-    assert(isNotBlank(type), 1, 'NonBlankString')
-    assert(isFunction(callback), 1, 'Function')
-    if (after) {
-      AFTER_HANDLERS[type] = callback
-    } else {
-      BEFORE_HANDLERS[type] = callback
-    }
-  }
+  static add = addHandler(HANDLERS_BEFORE, HANDLERS_AFTER)
 
   #root
+  #handlerBefore
+  #handlerAfter
 
   constructor(el) {
     this.#root = el
+    this.#handlerBefore = { ...HANDLERS_BEFORE }
+    this.#handlerAfter = { ...HANDLERS_AFTER }
+    this.add = addHandler(this.#handlerBefore, this.#handlerAfter)
   }
 
-  run(props) {
-    props?.type?.forEach(type => BEFORE_HANDLERS[type]?.(this.#root))
+  run({ type = [] } = {}) {
+    type.forEach(type => this.#handlerBefore[type]?.(this.#root))
     this.#root?.reset?.()
-    requestAnimationFrame?.(() => props?.type?.forEach(type => AFTER_HANDLERS[type]?.(this.#root)))
+    requestAnimationFrame?.(() => type.forEach(type => this.#handlerAfter[type]?.(this.#root)))
   }
 }
 
-function handleReset(el, opt) {
+function addHandler(cacheBefore = {}, cacheAfter = {}) {
+  return (type, callback, after) => {
+    assert(isNotBlank(type), 1, STRING_NON_BLANK)
+    assert(isFunction(callback), 1, FUNCTION)
+    if (after) {
+      cacheAfter[type] = callback
+    } else {
+      cacheBefore[type] = callback
+    }
+  }
 }
 
-function handleClear(el, opt) {
+function clear(el, opt) {
   querySelector('[name]', el).forEach(field => {
     const { type, tagName, disabled } = field
     const tag = tagName.toLowerCase()
@@ -68,6 +60,6 @@ function handleClear(el, opt) {
   })
 }
 
-function handleSubmit(el, opt) {
+function submit(el, opt) {
   triggerEvent(el, 'submit')
 }

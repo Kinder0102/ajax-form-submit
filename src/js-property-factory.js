@@ -3,18 +3,22 @@ import {
   isNotBlank,
   isFunction,
   isObject,
+  isBoolean,
   isTrue,
-  isArray,
   hasValue,
   toArray,
-  split
+  objectKeys,
+  objectEntries,
+  split,
+  findObjectValue
 } from './js-utils.js'
 
 import { isElement, querySelector } from './js-dom-utils.js'
 import { createCache } from './js-cache.js'
 
-const FORMULA_PATTERN = /(\!?)([\w|\.|\-]+)(\!?[\=|\>|\<]{1}\~?)?([\w|\.|\-|\/|\\]+)?/g
-const cache = createCache()
+const PROPERTY_CACHE = createCache()
+const TEMPLATE_CACHE = createCache()
+const FILTER_CACHE = createCache()
 
 export const createProperty = props => {
   return toArray(props || '').map(prop => {
@@ -23,7 +27,7 @@ export const createProperty = props => {
     } else if (isFunction(prop)) {
       return { type: ['function'], value: [prop] }
     } else {
-      if (!isObject(cache.get(prop))) {
+      if (!PROPERTY_CACHE.has(prop)) {
         let result = { type: [], value: [] }
         split(prop, '|').forEach(token => {
           if (isURL(token)) {
@@ -35,197 +39,134 @@ export const createProperty = props => {
             isNotBlank(escapedKey) ? (result[escapedKey] = values) : result.value.push(...values)
           }
         })
-        cache.set(prop, result)
+        PROPERTY_CACHE.set(prop, result)
       }
-      return cache.get(prop)
+      return PROPERTY_CACHE.get(prop)
     }
   })
 }
 
-export const createTemplateHandler = handlerStr => {
-  let filters = []
-  let defaultTemplateSelector = null
-  const tokens = (handlerStr || '').toString().split('|')
-  const templateTags = querySelector('template').map(elem => elem.content)
+export const createTemplateHandler = templateProp => {
+  if (TEMPLATE_CACHE.has(templateProp))
+    return TEMPLATE_CACHE.get(templateProp)
 
-  tokens.forEach(token => {
-    const tag = token.split(':')
-    if (tag.length === 1) {
-      defaultTemplateSelector = tag[0]
-    } else if (tag.length === 2) {
-      if (tag[0] === 'default' || tag[0] === 'value') {
-        defaultTemplateSelector = tag[1]
-      } else {
-        let filter = { value: tag[1], conditions: {} }
-        filters.push(filter)
-        tag[0].split(',').forEach(str => {
-          const filterObj = createFilterObject(str)
-          const { attribute } = filterObj
-          if (!Reflect.has(filter.conditions, attribute)) {
-            filter.conditions[attribute] = []
-          }
-          filter.conditions[attribute].push(filterObj)
-        })
+  let handler = {}
+  if (isElement(templateProp)) {
+    handler.getTemplate = item => templateProp
+  } else if (!isNotBlank(templateProp)) {
+    handler.getTemplate = createDefaultTemplate
+  } else {
+    const props = createProperty(templateProp)[0]
+    const templateTags = querySelector('template').map(elem => elem.content)
+    const selectors = objectEntries(props).reduce((acc, [ key, values ]) => {
+      if (key.includes('.')) {
+        const [enumType, enumValue] = split(key, '.')
+        acc[enumType] ||= {}
+        acc[enumType][enumValue] = props[key][0]
       }
-    }
-  })
-  return {
-    hasTemplate: () => isNotBlank(defaultTemplateSelector),
-    getTemplate: item => {
-      const selector = findTemplate(item, filters) || defaultTemplateSelector
-      let elem = templateTags.map(tag => querySelector(selector, tag)).flat()[0]
-      if (!isElement(elem))
-        elem = querySelector(selector)[0]
-      const newElem = elem?.cloneNode(true)
-      newElem?.removeAttribute('id')
-      return newElem
-    }
-  }
-}
+      return acc
+    }, {})
 
-export const createFilter = filterInput => {
-  let filters = {}
-  const attributes = []
-
-  const createAndAddFilter = token => {
-    const filterObj = createFilterObject(token)
-    const { attribute } = filterObj
-    if (!Reflect.has(filters, attribute)) {
-      filters[attribute] = []
-    }
-    attributes.push(attribute)
-    filters[attribute].push(filterObj)
-    return filterObj
-  }
-
-  if (typeof filterInput === 'object') {
-    for (const key in filterInput) {
-      const value = filterInput[key]
-      if (Array.isArray(value)) {
-        value.forEach(item => {
-          let filterObj = createAndAddFilter(key)
-          filterObj.value = item
-        })
-      } else {
-        let filterObj = createAndAddFilter(key)
-        filterObj.value = value
-      }
-    }
-  } else if (typeof filterInput === 'string') {
-    const tokens = (filterInput || '').split(',')
-    tokens.forEach(createAndAddFilter)
-  }
-
-  return {
-    attributes,
-    filter: (attribute, value) => {
-      if (!attributes.includes(attribute))
-        return false
-
-      return filters[attribute].reduce((isPass, condition) => {
-        return isPass && compare(value, condition)
-      }, true)
-    }
-  }
-}
-
-function findTemplate(item, filters) {
-  for (const filter of filters) {
-    let isMatch = true
-    for (const attribute in filter.conditions) {
-      const conditions = filter.conditions[attribute]
-      const nestedAttributes = attribute.split('.')
-
-      let value = item
-      for (const nestedAttribute of nestedAttributes) {
-        if (Reflect.has(value, nestedAttribute)) {
-          value = value[nestedAttribute]
-          continue
-        } else {
-          value = null
+    handler.getTemplate = item => {
+      let selector = props.value[0]
+      for (const [key, values] of objectEntries(selectors)) {
+        const { exist, value } = findObjectValue(item, key)
+        if (exist && hasValue(values[value])) {
+          selector = values[value]
           break
         }
       }
-
-      isMatch = isMatch && conditions.reduce((isPass, condition) => {
-        return isPass && compare(value, condition)
-      }, true)
+      let result = templateTags.map(tag => querySelector(selector, tag)).flat()[0]?.cloneNode?.(true)
+      result ||= createDefaultTemplate(item)
+      result.removeAttribute?.('id')
+      return result
     }
-
-    if (isValid)
-      return filter.value
   }
+  TEMPLATE_CACHE.set(templateProp, handler)
+  return handler
 }
 
-function createFilterObject(filterStr) {
-  const matches = (filterStr || '').matchAll(FORMULA_PATTERN)
-  
-  const createOperator = str => ({
-    isNot: str && str.charAt(0) === '!' || false,
-    isGreater: str && str.charAt(0) === '>' || false,
-    isLower: str && str.charAt(0) === '<' || false,
-    isLike: str && str.length > 1 && str.charAt(0) === '=' && str.charAt(1) === '~' || false
-  })
+export const createFilter = filterProp => {
+  const props = createProperty(filterProp)[0]
+  const comparables = props.value.reduce((acc, prop) => {
+    const comparable = Comparable.create(prop)
+    acc[comparable.key] ||= []
+    acc[comparable.key].push(comparable)
+    return acc
+  }, {})
+  const keys = objectKeys(comparables)
 
-  for (const match of matches) {
-    const attribute = match[2]
-    const value = match[4]
-    const operator1 = createOperator(match[1])
-    const operator2 = createOperator(match[3])
-
-    return {
-      value,
-      attribute,
-      isNot: operator1.isNot || operator2.isNot,
-      isGreater: operator1.isGreater || operator2.isGreater,
-      isLower: operator1.isLower || operator2.isLower,
-      isLike: operator1.isLike || operator2.isLike,
+  return {
+    keys,
+    filter: (key, value) => {
+      return keys.includes(key) && comparables[key].reduce(
+        (acc, comparable) => acc && comparable.compare(value),
+        true)
     }
   }
 }
 
-function compare(value, filter) {
-  if (isArray(value)) {
-    const inputLength = value.length
-    const compareLength = parseInt(filter.value) || 0
-    if (filter['isGreater']) {
-      return inputLength > compareLength
-    } else if (filter['isLower']) {
-      return inputLength < compareLength
-    } else {
-      const isNot = filter['isNot'] || false
-      const isLengthEqual = (inputLength === compareLength)
-      const isGreaterThanZero = (inputLength > 0)
-      const result = hasValue(filter.value) ? isLengthEqual : isGreaterThanZero
-      return result ^ isNot 
+function createDefaultTemplate(data) {
+  const template = document.createElement('span')
+  template.textContent = JSON.stringify(data)
+  return template
+}
+
+class Comparable {
+  static OPERATORS = ['=~', '==', '!=', '>=', '<=', '>', '<', '=']
+  static NOT_PREFIX = /^!/
+  static create = prop => {
+    if (!FILTER_CACHE.has(prop))
+      FILTER_CACHE.set(prop, new Comparable(prop))
+    return FILTER_CACHE.get(prop)
+  }
+
+  constructor(prop) {
+    this.key = prop
+
+    if (Comparable.NOT_PREFIX.test(prop)) {
+      this.key = prop.slice(1)
+      this.operator = '!'
     }
-  } else {
-    if (filter['isGreater']) {
-      return parseInt(value) > (parseInt(filter.value) || 0)
-    } else if (filter['isLower']) {
-      return parseInt(value) < (parseInt(filter.value) || 0)
-    } else if (filter['isNot']) {
-      if (hasValue(filter.value)) {
-        const valueIgnoreCase = value?.toString().toLowerCase()
-        const filterIgnoreCase = filter.value.toString().toLowerCase()
-        return valueIgnoreCase !== filterIgnoreCase
+
+    for (const operator of Comparable.OPERATORS) {
+      if (!prop.includes(operator))
+        continue
+      
+      const [key, valueStr] = split(prop, operator)
+      this.key = key
+      this.operator = operator
+      if (valueStr === 'true') {
+        this.value = true
+      } else if (valueStr === 'false') {
+        this.value = false
+      } else if (!isNaN(valueStr)) {
+        this.value = Number(valueStr)
       } else {
-        return !isTrue(value)
+        this.value = valueStr
       }
-    } else {
-      if (!hasValue(filter.value)) {
-        return isTrue(value)
-      } else if (!hasValue(value)) {
-        return false
-      } else {
-        const valueIgnoreCase = value.toString().toLowerCase()
-        const filterIgnoreCase = filter.value.toString().toLowerCase()
-        if (filter['isLike']) {
-          return valueIgnoreCase.includes(filterIgnoreCase)
-        } else {
-          return valueIgnoreCase === filterIgnoreCase
+      break
+    }
+  }
+
+  compare(value) {
+    switch (this.operator) {
+      case '!': return isBoolean(value) ? !isTrue(value) : !hasValue(value)
+      case '!=': return value != this.value
+      case '>=': return value >= this.value
+      case '<=': return value <= this.value
+      case '>': return value > this.value
+      case '<': return value < this.value
+      case '=~':
+        try {
+          return new RegExp(this.value, 'i').test(String(value))
+        } catch (e) {
+          return false
         }
-      }
+      case '==':
+      case '=':
+        return value == this.value
+      default: return isBoolean(value) ? isTrue(value) : hasValue(value)
     }
   }
 }
