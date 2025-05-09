@@ -1,10 +1,20 @@
 import {
+  ARRAY,
+  ARRAY_HTML_ELEMENT,
+  STRING_NON_BLANK,
+  FUNCTION,
+  DOCUMENT,
+  HTML_ELEMENT
+} from './js-constant.js'
+
+import {
   assert,
-  isArray,
   isObject,
+  isArray,
   isNotBlank,
   isFunction,
   toArray,
+  objectValues,
   split,
   startsWith
 } from './js-utils.js'
@@ -21,27 +31,24 @@ export function elementIs(el, type) {
   if (isNotBlank(type)) {
     return type === elemType
   } else if (isArray(type)) {
-    for (const token of type) {
-      if (token === elemType)
-        return true
-    }
+    return type.includes(elemType)
   } else {
-    assert(false, 2, 'NonBlankString or Array')
+    assert(false, 2, [ARRAY, STRING_NON_BLANK])
   }
   return false
 }
 
 export function hasClass(el, classname) {
-  return isElement(el) && el.classList?.contains(classname)
+  return isElement(el) && isNotBlank(classname) && el.classList?.contains(classname)
 }
 
 export function addClass(el, classname) {
-  assert(isElement(el), 1, 'HTMLElement')
+  assert(isElement(el), 1, HTML_ELEMENT)
   split(classname).forEach(token => el.classList?.add(token))
 }
 
 export function removeClass(el, classname) {
-  assert(isElement(el), 1, 'HTMLElement')
+  assert(isElement(el), 1, HTML_ELEMENT)
   split(classname).forEach(token => el.classList?.remove(token))
 }
 
@@ -136,18 +143,18 @@ export function registerAttributeChange(el, attrName, callback) {
   return observer
 }
 
-export function registerEvent(elements, eventName, callback) {
-  assert(isArray(eventName) || isNotBlank(eventName), 2, 'Array or NonBlankString')
-  assert(isFunction(callback), 3, 'Function')
+export function registerEvent(elements, eventName, callback, options) {
+  assert(isArray(eventName) || isNotBlank(eventName), 2, [ARRAY, STRING_NON_BLANK])
+  assert(isFunction(callback), 3, FUNCTION)
 
   const events = split(eventName)
   checkElements(elements).forEach(elem => {
-    events.forEach(event => elem.addEventListener(event, callback))
+    events.forEach(event => elem.addEventListener(event, callback, options))
   })
 }
 
 export function triggerEvent(elements, eventName, payload) {
-  assert(isNotBlank(eventName), 2, 'NonBlankString')
+  assert(isNotBlank(eventName), 2, STRING_NON_BLANK)
   
   const event = new CustomEvent(eventName, { detail: payload })
   checkElements(elements).forEach(elem => elem.dispatchEvent(event))
@@ -165,10 +172,10 @@ function checkElements(elements) {
   } else if (elements === document || isElement(elements)) {
     result.push(elements)
   } else if (isObject(elements)) {
-    Object.values(elements).map(checkElements)
-      .flat().forEach(elem => result.push(elem))
+    for (const value of objectValues(elements))
+      result.push(...checkElements(value))
   } else {
-    assert(false, 1, 'document, HTMLElement, HTMLElementArray or HTMLElementObject')
+    assert(false, 1, [DOCUMENT, HTML_ELEMENT, ARRAY_HTML_ELEMENT])
   }
   return result
 }

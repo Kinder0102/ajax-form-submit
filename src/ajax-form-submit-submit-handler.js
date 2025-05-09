@@ -1,3 +1,4 @@
+import { FUNCTION, STRING_NON_BLANK } from './js-constant.js'
 import {
   assert,
   hasValue,
@@ -5,6 +6,7 @@ import {
   isArray,
   isFunction,
   isNotBlank,
+  isPromise,
   stringToValue,
   valueToString,
   toArray
@@ -19,8 +21,8 @@ let HANDLERS = {
 export default class AjaxFormSubmitSubmitHandler {
 
   static add = (type, callback, wrapResponse = false) => {
-    assert(isNotBlank(type), 1, 'NonBlankString')
-    assert(isFunction(callback), 1, 'Function')
+    assert(isNotBlank(type), 1, STRING_NON_BLANK)
+    assert(isFunction(callback), 1, FUNCTION)
     HANDLERS[type] = { callback, wrapResponse }
   }
 
@@ -36,7 +38,11 @@ export default class AjaxFormSubmitSubmitHandler {
     const handler = HANDLERS[type]
     assert(isFunction(handler?.callback), `Could not find submitHandler "${type}"`)
     const result = handler.callback({ ...this.#payload, ...opt }, input, requestParams)
-    return Promise.resolve(handler.wrapResponse ? this.#createResponse(result) : result)
+    if (isPromise(result)) {
+      return result
+    } else {
+      return Promise.resolve(handler.wrapResponse ? this.#createResponse(result) : result)
+    }
   }
 }
 

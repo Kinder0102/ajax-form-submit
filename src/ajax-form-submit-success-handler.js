@@ -1,3 +1,4 @@
+import { OBJECT, FUNCTION, STRING_NON_BLANK } from './js-constant.js'
 import {
   assert,
   formatUrl,
@@ -8,6 +9,8 @@ import {
   isFunction,
   isNotBlank,
   hasValue,
+  objectKeys,
+  objectEntries,
   valueToString,
   stringToValue,
   findObjectValue,
@@ -28,12 +31,12 @@ import { createProperty } from './js-property-factory.js'
 const CLASS_NAME = 'ajax-form-submit-success'
 const SKELETON_CLASS_NAME = `${CLASS_NAME}-skeleton`
 const LIFECYCLES = [
-  { name: 'before', required: false },
-  { name: 'validation', required: false },
-  { name: 'request', required: false },
-  { name: 'response', required: false },
+  { name: 'before' },
+  { name: 'validation' },
+  { name: 'request' },
+  { name: 'response' },
   { name: 'after', required: true },
-  { name: 'error', required: false },
+  { name: 'error' },
 ]
 
 let HANDLERS = {
@@ -49,7 +52,7 @@ let HANDLERS = {
 export default class AjaxFormSubmitSuccessHandler {
 
   static add = (type, callback) => {
-    assert(isNotBlank(type), 1, 'NonBlankString')
+    assert(isNotBlank(type), 1, STRING_NON_BLANK)
     HANDLERS[type] = createHandler(callback)
   }
 
@@ -83,7 +86,7 @@ export default class AjaxFormSubmitSuccessHandler {
 
   #run(lifecycle, opts, input, output, type) {
     this.#updateHandlerProps(opts)
-    const types = Object.keys(this.#handlerProps)
+    const types = objectKeys(this.#handlerProps)
     if (isNotBlank(type) && !types.includes(type))
       return
 
@@ -101,13 +104,13 @@ export default class AjaxFormSubmitSuccessHandler {
     this.#handlerProps = {}
     this.#defaultHandlerProps
     if (isObject(this.#defaultHandlerProps)) {
-      for (const [key, value] of Object.entries(this.#defaultHandlerProps)) {
+      for (const [key, value] of objectEntries(this.#defaultHandlerProps)) {
         this.#handlerProps[key] = createProperty(value)
       }
     }
 
     if (isObject(handlerProps)) {
-      for (const [key, value] of Object.entries(handlerProps)) {
+      for (const [key, value] of objectEntries(handlerProps)) {
         if (key.includes(this.#attrInputName))
           this.#handlerProps[key.replace(this.#attrRegex, '')] = createProperty(value)
       }
@@ -135,7 +138,7 @@ function createHandler(callback) {
     }
     return result
   } else {
-    assert(false, 1, 'Function or Object')
+    assert(false, 1, [OBJECT, FUNCTION])
   }
 }
 
@@ -168,22 +171,22 @@ function handleRedirect(input, output, { target, type, param }, { basePath }) {
     default:
       if (!isNotBlank(url)) {
         location.reload()
-        break
+      } else {
+        const outputObj = isObject(output) ? output : { value: output }
+        url = addBasePath(formatUrl(formatUrl(target[0], input), outputObj), basePath)
+        let params = new URLSearchParams()
+        param?.forEach?.(key => {
+          const inputValue = findObjectValue(input, key)
+          const outputValue = findObjectValue(outputObj, key)
+          inputValue.exist && params.set(key, inputValue.value)
+          outputValue.exist && params.set(key, outputValue.value)
+        })
+
+        if (params.size > 0)
+          url += `?${params.toString()}`
+
+        location.href = url
       }
-      const outputObj = isObject(output) ? output : { value: output }
-      url = addBasePath(formatUrl(formatUrl(target[0], input), outputObj), basePath)
-      let params = new URLSearchParams()
-      param?.forEach?.(key => {
-        const inputValue = findObjectValue(input, key)
-        const outputValue = findObjectValue(outputObj, key)
-        inputValue.exist && params.set(key, inputValue.value)
-        outputValue.exist && params.set(key, outputValue.value)
-      })
-
-      if (params.size > 0)
-        url += `?${params.toString()}`
-
-      location.href = url
   }
 }
 
@@ -220,33 +223,35 @@ function handleHide(input, output, { target }, { root }) {
   hideElements(getTargets(target, root))
 }
 
-function handleUpdateQueryString(input, output, { target }) {
-  if (!URL || !location || !history || !history.pushState)
-    return
-
+function handleUpdateQueryString(input, output, { add, remove, value }) {
   const { host, protocol, pathname } = location
-  const includes = []
-  const excludes = []
+  const includes = new Set([ ...(add || []), ...(value || []) ])
+  const excludes = new Set(remove || [])
   const url = new URL(`${protocol}//${host}${pathname}`)
-  
-  target.forEach(str => {
-    const { exist, value } = startsWith(str, '-')
-    exist ? excludes.push(value) : includes.push(value)
-  })
+  const searchParams = url.searchParams
+  const hasIncludes = includes.size > 0
+  const hasExcludes = !hasIncludes && excludes?.size > 0
 
-  if (includes.length > 0) {
-    for(const key in input){
-      if (includes.includes(key)) {
-        setQueryString(url, key, input[key])
+  objectKeys(input).forEach(key => {
+    if (hasIncludes ? includes.has(key) : hasExcludes ? !excludes.has(key) : true) {
+      const val = input[key]
+      if (isArray(val)) {
+        searchParams.delete(key)
+        val.forEach(item => searchParams.append(key, item))
+      } else if (isObject(val)) {
+        searchParams.set(key, JSON.stringify(val))
+      } else if (hasValue(val)) {
+        if (typeof val === 'string') {
+          isNotBlank(val) ? searchParams.set(key, val) : searchParams.delete(key)
+        } else {
+          searchParams.set(key, val)
+        }
+      } else {
+        searchParams.delete(key)
       }
     }
-  } else {
-    for(const key in input){
-      if (!excludes.includes(key)) {
-        setQueryString(url, key, input[key])
-      }
-    }
-  }
+  })
+  
   history.replaceState({ path: url.href }, '', url.href)
 }
 
@@ -269,15 +274,4 @@ function handleStorage(input, output, { value }, { root, prefix }) {
           localStorage.setItem(storageKey, valueToString(value))
     }
   })
-}
-
-function setQueryString(url, key, value) {
-  if (isArray(value)) {
-    url.searchParams.delete(key)
-    value.forEach(item => url.searchParams.append(key, item))
-  } else if (isObject(value)) {
-    url.searchParams.set(key, JSON.stringify(value))
-  } else if (hasValue(value)) {
-    url.searchParams.set(key, value)
-  }
 }

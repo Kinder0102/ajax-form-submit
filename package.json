@@ -6,6 +6,7 @@
   "main": "./src/ajax-form-submit.js",
   "exports": {
     ".": "./src/ajax-form-submit.js",
+    "./js-constant": "./src/js-constant.js",
     "./js-utils": "./src/js-utils.js",
     "./js-dom-utils": "./src/js-dom-utils.js",
     "./js-config": "./src/js-config.js",

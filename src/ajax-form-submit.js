@@ -1,17 +1,26 @@
 import {
+  OBJECT,
+  STRING_NON_BLANK,
+  ERROR_CONFIRM,
+  ERROR_VALIDATION
+} from './js-constant.js'
+
+import {
   assert,
   startsWith,
   endsWith,
   isTrue,
+  isArray,
   isNotBlank,
   isObject,
-  isArray,
   hasValue,
   delay,
   valueToString,
   toCamelCase,
   toKebabCase,
   toArray,
+  objectKeys,
+  objectEntries,
   findObjectValue,
   deepFilterArrays
 } from './js-utils.js'
@@ -49,23 +58,32 @@ const FORM_MESSAGE_PAYLOAD_INPUT_CLASS_NAME = `${FORM_CLASS_NAME}-message-payloa
 const FORM_MESSAGE_PAYLOAD_OUTPUT_CLASS_NAME = `${FORM_CLASS_NAME}-message-payload-output`
 const FORM_MESSAGE_PAYLOAD_PAGE_CLASS_NAME = `${FORM_CLASS_NAME}-message-payload-page`
 
-const FORM_EVENT = `${FORM_CLASS_NAME}-event`
 const FORM_EVENT_SUBMIT = `submit`
 const FORM_EVENT_RESET = `reset`
-const FORM_EVENT_APPLY = `${FORM_EVENT}-apply`
-const FORM_EVENT_TRIGGER = `${FORM_EVENT}-trigger`
-const FORM_EVENT_PAGE_UPDATE = `${FORM_EVENT}-page-update`
-const FORM_EVENT_UPLOAD_START = `${FORM_EVENT}-upload-start`
-const FORM_EVENT_UPLOAD_STOP = `${FORM_EVENT}-upload-stop`
+const FORM_EVENT_APPLY = `${FORM_CLASS_NAME}:apply`
+const FORM_EVENT_TRIGGER = `${FORM_CLASS_NAME}:trigger`
+const FORM_EVENT_PAGE_UPDATE = `${FORM_CLASS_NAME}:page-update`
+const FORM_EVENT_UPLOAD_START = `${FORM_CLASS_NAME}:upload-start`
+const FORM_EVENT_UPLOAD_STOP = `${FORM_CLASS_NAME}:upload-stop`
+
+const TRIGGER_CLICKABLE = [ 'button', 'a' ]
 
 const UI_CONTROLS = {
-  show: { name: `${FORM_CLASS_NAME}-show` },
-  hide: { name: `${FORM_CLASS_NAME}-hide`, hide: true },
-  progress: { name: `${FORM_CLASS_NAME}-progress` },
-  messageValidation: { name: `${FORM_CLASS_NAME}-message-validation` },
-  messageSuccess: { name: `${FORM_CLASS_NAME}-message-success` },
-  messageError: { name: `${FORM_CLASS_NAME}-message-error` },
+  enable: { name: `${FORM_CLASS_NAME}-enable`, enable: true },
+  disable: { name: `${FORM_CLASS_NAME}-disable`, enable: false },
+  show: { name: `${FORM_CLASS_NAME}-show`, show: true },
+  hide: { name: `${FORM_CLASS_NAME}-hide`, show: false },
+  progress: { name: `${FORM_CLASS_NAME}-progress`, show: true },
+  messageValidation: { name: `${FORM_CLASS_NAME}-message-validation`, show: true },
+  messageSuccess: { name: `${FORM_CLASS_NAME}-message-success`, show: true },
+  messageError: { name: `${FORM_CLASS_NAME}-message-error`, show: true },
 }
+
+const ADDITIONAL_DATA = [
+  { name: 'page' },
+  { name: 'querystring' },
+  { name: 'apply', required: true },
+]
 
 const DEFAULT_CONFIG = {
   prefix: 'afs',
@@ -80,7 +98,11 @@ const DEFAULT_CONFIG = {
     checkResponse: res => res?.code === 200,
     getData: res => res?.data?.item,
     getPage: res => res?.data?.page,
-    getError: error => error?.code
+    getError: (error = {}) => (
+      (error.code && (AjaxFormSubmit.config.i18n?.code?.[error.code] || error.code)) ||
+      (error.status && (AjaxFormSubmit.config.i18n?.status?.[error.status] || error.status)) ||
+      error.message
+    )
   },
   getCsrfToken: () => ({
     header: document.querySelector('meta[name="_csrf_header"]')?.content || 'X-CSRF-TOKEN',
@@ -107,8 +129,6 @@ class AjaxFormSubmit {
   #datasetHelper
   #submitHandler
   #resetHandler
-  #submitButtons
-  #resetButtons
   #controls
   #pagination
   #additionalData
@@ -126,26 +146,25 @@ class AjaxFormSubmit {
     this.#domHelper = new DOMHelper({ prefix, basePath })
     this.#submitHandler = this.#initSubmitHandler()
     this.#resetHandler = new ResetHandler(this.#root)
-    this.#submitButtons = this.#initSubmitButtons()
-    this.#resetButtons = this.#initResetButtons()
     this.#controls = this.#initUIControls()
     this.#additionalData = {}
     
+    this.#initTriggers()
     this.initPagination()
     this.initAutoSubmit()
     this.initSuccessHandler()
 
     registerEvent(this.#root, FORM_EVENT_SUBMIT, event => this.submitSync({ event }))
-    registerEvent(this.#root, FORM_EVENT_APPLY, this.#handleApplied.bind(this))
-    registerEvent(this.#root, FORM_EVENT_TRIGGER, this.#handleTriggered.bind(this))
-    registerEvent(this.#root, FORM_EVENT_RESET, this.#handleReset.bind(this), true)
+    registerEvent(this.#root, FORM_EVENT_APPLY, this.#handleEventApplied.bind(this))
+    registerEvent(this.#root, FORM_EVENT_TRIGGER, this.#handleEventTriggered.bind(this))
+    registerEvent(this.#root, FORM_EVENT_RESET, this.#handleEventReset.bind(this))
     addClass(this.#root, FORM_INIT_CLASS_NAME)
   }
 
   updateConfig(props) {
     Object.assign(this.config, props)
     createProperty(this.#getParameters('config')).forEach(config => {
-      for (const [key, values] of Object.entries(config)) {
+      for (const [key, values] of objectEntries(config)) {
         if (hasValue(values[0]))
           this.config[key] = values[0]
       }
@@ -159,23 +178,17 @@ class AjaxFormSubmit {
       ...querySelector(selectors)
     ]
 
-    if (elems.length > 0) {
-      this.#pagination = {
-        updatePage: page => {
-          if (!isObject(page))
-            return
-          triggerEvent(elems, FORM_EVENT_PAGE_UPDATE, {
-            page,
-            onPaging: input => {
-              this.#additionalData.page = {
-                [pagination.page]: input[pagination.page],
-                [pagination.size]: input[pagination.size],
-              }
-              this.submitSync({ additional: ['page'] })
-            }
-          })
+    this.#pagination = {
+      updatePage: page => isObject(page) && triggerEvent(elems, FORM_EVENT_PAGE_UPDATE, {
+        page,
+        onPaging: input => {
+          this.#additionalData.page = {
+            [pagination.page]: input[pagination.page],
+            [pagination.size]: input[pagination.size],
+          }
+          this.submitSync({ additional: ['page'] })
         }
-      }
+      })
     }
     return this
   }
@@ -217,39 +230,31 @@ class AjaxFormSubmit {
   }
 
   addUIControls(opt) {
-    assert(isObject(opt), 1, 'Object')
-    for (const [type, value] of Object.entries(opt))
-      querySelector(value).forEach(elem => this.#controls[type].push(elem))
+    assert(isObject(opt), 1, OBJECT)
+    for (const [type, value] of objectEntries(opt))
+      querySelector(value).forEach(elem => this.#controls[type]?.push(elem))
     return this
   }
 
   submit(opt = {}) {
     stopDefaultEvent(opt?.event)
-
-    let options = { ...opt, props: {} }
-    let req
-    if (isArray(options.data)) {
-      req = options.data
-    } else {
-      const { formData, props } = this.#generateFormData(options)
-      req = formDataToObject(formData)
-      options.props = props
-    }
-
-    return this.#handleBefore(req, options)
-      .then(ignored => this.#handleValidation(req, options))
-      .then(ignored => this.#handleRequest(req, options))
-      .then(({ request, response }) => this.#handleResponse(request, response, options))
-      .then(({ request, response }) => this.#handleAfter(request, response, options))
+    return this.#handleBefore(opt)
+      .then(({ request, options }) => {
+        opt = options
+        return this.#handleValidation(request, opt)
+      })
+      .then(request => this.#handleRequest(request, opt))
+      .then(({ request, response }) => this.#handleResponse(request, response, opt))
+      .then(({ request, response }) => this.#handleAfter(request, response, opt))
       .catch(error => {
         switch (error?.message) {
-          case 'VALIDATION':
+          case ERROR_VALIDATION:
             break
-          case 'CONFIRM':
+          case ERROR_CONFIRM:
             this.#resetUIControls()
             break
           default:
-            this.#handleError(error)
+            this.#handleError(error, opt)
             throw error
         }
       })
@@ -269,37 +274,27 @@ class AjaxFormSubmit {
     return new SubmitHandler({ prefix, basePath, createResponse, handleProgress })
   }
 
-  #initSubmitButtons() {
-    const submitButtons = []
-    const attrName = this.#datasetHelper.keyToAttrName('button')
-    const innerSelector = `button[type="submit"], [${attrName}]`
-    const outterSelector = this.#datasetHelper.getValue(this.#root, 'button')
-    const buttons = [
-      ...querySelector(outterSelector),
-      ...querySelector(innerSelector, this.#root)
-        .filter(button => !isNotBlank(button.getAttribute('form')))
-    ]
-    
-    //TODO outter button registerEvent
-    buttons.forEach(button => {
-      if (elementIs(button, ['a', 'button'])) {
-        submitButtons.push(button)
-        if (button.type !== 'submit')
-          registerEvent(button, 'click', event => this.submitSync())
+  #initTriggers() {
+    const props = createProperty(this.#datasetHelper.getValue(this.#root, 'trigger'))[0]
+    const attrName = this.#datasetHelper.keyToAttrName('trigger')
+    const triggers = [
+      ...querySelector(props.value),
+      ...querySelector(`button[type="submit"], button:not([type]), [${attrName}]`, this.#root)
+    ].filter(el => !isNotBlank(el.getAttribute('form')))
+    triggers.forEach(el => {
+      if (elementIs(el, TRIGGER_CLICKABLE)) {
+        this.addUIControls({ disable: el })
+        if (!elementIs(el, 'button') || !this.#root.contains(el))
+          registerEvent(el, 'click', event => this.submitSync())
       } else {
-        registerEvent(button, 'change', event => this.submitSync())
+        registerEvent(el, 'change', event => this.submitSync())
       }
     })
-    return submitButtons
-  }
-
-  #initResetButtons() {
-    return querySelector(`button[type="reset"]`, this.#root)
   }
 
   #initUIControls() {
     let controls = {}
-    for (const [key, { name }] of Object.entries(UI_CONTROLS)) {
+    for (const [key, { name }] of objectEntries(UI_CONTROLS)) {
       controls[key] = [
         ...querySelector(this.#getParameters(toKebabCase(key))),
         ...querySelector(`.${name}`, this.#root)
@@ -308,12 +303,26 @@ class AjaxFormSubmit {
     return controls
   }
 
-  #handleBefore(request, opt = {}) {
-    const middlewareProps = this.#getParameters('middleware-before', opt)
+  #handleBefore(opt = {}) {
+    let request = isObject(opt.data) ? opt.data : this.#generateFormData(opt)
+    request = formDataToObject(request)
+
+    const props = objectKeys(request).reduce((acc, key) => {
+      if (startsWith(key, '_').exist) {
+        acc[key] = request[key]
+        delete request[key]
+      }
+      return acc
+    }, {})
+
+    const options = { ...opt, props }
+    const middlewareProps = this.#getParameters('middleware-before', options)
     const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
-    return middleware({ request, root: this.#root}).then(ignored => {
+
+    return middleware({ request, root: this.#root }).then(result => {
       this.#resetUIControls()
       this.successHandler?.before?.(opt.props)
+      return { request: hasValue(result?.request) ? result.request : request, options }
     })
   }
 
@@ -335,7 +344,7 @@ class AjaxFormSubmit {
       requiredGroups[groupName].push(elem)
     })
     
-    for (const [name, group] of Object.entries(requiredGroups)) {
+    for (const [name, group] of objectEntries(requiredGroups)) {
       const groupValid = group.some(elem => {
         const elemName = elem.getAttribute('name')
         let isValid = hasValue(request[elemName]) || isNotBlank(elem.value)
@@ -354,8 +363,9 @@ class AjaxFormSubmit {
       if (fields.size > 0) {
         showElements(this.#controls.messageValidation)
         this.#pagination?.updatePage?.({})
-        throw new Error('VALIDATION')
+        throw new Error(ERROR_VALIDATION)
       }
+      return request
     })
   }
 
@@ -366,7 +376,7 @@ class AjaxFormSubmit {
     // TODO need finetune
     const inAttr = this.#datasetHelper.keyToAttrName('in')
     const requestParams = {
-      method: this.#getParameters('method', opt, 'POST')[0].toUpperCase(),
+      method: this.#getParameters('method', opt)[0],
       url: this.#getParameters('action', opt, opt.url)[0],
       enctype: this.#getParameters('enctype', opt)[0],
       csrf: this.#config.get('getCsrfToken')['getCsrfToken']?.(),
@@ -375,8 +385,8 @@ class AjaxFormSubmit {
         .map(({ name, value }) => ({ name, value }))
     }
 
-    disableElements(this.#submitButtons)
-    disableElements(this.#resetButtons)
+    enableElements(this.#controls.enable)
+    disableElements(this.#controls.disable)
     showElements(this.#controls.show)
     hideElements(this.#controls.hide)
     return delay(this.#config.get('delay').delay)
@@ -461,7 +471,7 @@ class AjaxFormSubmit {
     triggerEvent(this.#controls.progress, FORM_EVENT_UPLOAD_START, [percent])
   }
 
-  #handleApplied(event) {
+  #handleEventApplied(event) {
     stopDefaultEvent(event)
     this.#additionalData.apply ||= {}
     const attrName = this.#datasetHelper.keyToAttrName('applied')
@@ -470,11 +480,11 @@ class AjaxFormSubmit {
       output:  event?.detail?.output,
     }
     
-    for (const [type, applyData] of Object.entries(payload)) {
+    for (const [type, applyData] of objectEntries(payload)) {
       let targets = []
       if (isObject(applyData)) {
 
-        for (const [key, values] of Object.entries(applyData)) {
+        for (const [key, values] of objectEntries(applyData)) {
           const allAttr = `[${attrName}="${key}"]`
           const typeAttr = `[${attrName}-${type}="${key}"]`
 
@@ -491,13 +501,13 @@ class AjaxFormSubmit {
     }
   }
 
-  #handleTriggered(event) {
+  #handleEventTriggered(event) {
     stopDefaultEvent(event)
-    this.#handleApplied(event)
+    this.#handleEventApplied(event)
     this.submitSync({ additional: event?.detail?.props?.additional })
   }
 
-  #handleReset(event) {
+  #handleEventReset(event) {
     this.#resetUIControls()
     this.successHandler?.before?.()
     this.#pagination?.updatePage?.({})
@@ -506,7 +516,7 @@ class AjaxFormSubmit {
   }
 
   #getParameters(key, opt, defaultValue) {
-    assert(isNotBlank(key), 1, 'NonBlankString')
+    assert(isNotBlank(key), 1, STRING_NON_BLANK)
 
     let result = []
     const camelKey = toCamelCase(key)
@@ -538,66 +548,47 @@ class AjaxFormSubmit {
     return result
   }
 
+
   #generateFormData(opt = {}) {
-    const form = this.#root
-    const formData = elementIs(form, 'form') ? new FormData(form) : new FormData()
+    const formData = new FormData(this.#root)
     
     //TODO need finetune
-    appendAdditionalInput(formData, this.#datasetHelper.getValue(form, 'input'))
+    appendAdditionalInput(formData, this.#datasetHelper.getValue(this.#root, 'input'))
 
-    if (opt.additional?.includes('page'))
-      appendParameter(formData, this.#additionalData.page)
-    if (opt.additional?.includes('querystring'))
-      appendParameter(formData, this.#additionalData.querystring)
+    ADDITIONAL_DATA.forEach(({ name, required }) => {
+      if (required || opt.additional?.includes(name))
+        appendParameter(formData, this.#additionalData[name])
+    })
 
-    appendParameter(formData, opt.data)
-    appendParameter(formData, this.#additionalData.apply)
-    processCheckboxValue(formData, form)
-    processInputDateValue(formData, form)
+    processCheckboxValue(formData, this.#root)
+    processInputDateValue(formData, this.#root)
 
+    //TODO need finetune
     const headerAttr = this.#datasetHelper.keyToAttrName('header')
-    deleteInputHeader(form, formData, headerAttr)
-    const props = deleteInputPropValue(formData)
-
-    for (const key of new Set(formData.keys())) {
-      let values = formData.getAll(key).filter(hasValue)
-      let realKeys = [ key ]
-      if (key.includes('|')) {
-        formData.delete(key)
-        realKeys = key.split('|').filter(hasValue)
-      }
-      realKeys.forEach(realKey => {
-        formData.delete(realKey)
-        let inputValues = values.length === 0 ?
-          this.#getParameters(`default-${realKey}`) : values
-        if (inputValues.length === 0)
-          inputValues.push('')
-        inputValues.forEach(value => formData.append(realKey, value))
-      })
-    }
-    return { formData, props }
+    deleteInputHeader(this.#root, formData, headerAttr)
+    
+    // TODO set default
+    return formData
   }
 
   #clearInputs() {
     const attrName = this.#datasetHelper.keyToAttrName('clear')
-    findFormElem(this.#root, `[${attrName}]`).forEach(elem => {
-      elem.value = ''
-      const selector = `.${FORM_APPLY_CLASS_NAME}[name="${elem.getAttribute('name')}"]`
-      querySelector(selector, this.#root).forEach(elem => elem.remove())
-    })
+    findFormElem(this.#root, `[${attrName}]`).forEach(elem => (elem.value = ''))
   }
 
   #resetUIControls() {
-    enableElements(this.#submitButtons)
-    enableElements(this.#resetButtons)
-    for (const [key, elements] of Object.entries(this.#controls)) {
-      UI_CONTROLS[key]?.hide ? showElements(elements) : hideElements(elements)
+    for (const [key, elements] of objectEntries(this.#controls)) {
+      const control = UI_CONTROLS[key]
+      if (hasValue(control?.show))
+        control?.show ? hideElements(elements) : showElements(elements)
+      if (hasValue(control?.enable))
+        control?.enable ? disableElements(elements) : enableElements(elements)
     }
   }
 }
 
 function findFormElem(form, selector) {
-  assert(isNotBlank(selector), 1, 'NonBlankString')
+  assert(isNotBlank(selector), 1, STRING_NON_BLANK)
   const formId = form.id
   let elems = querySelector(`${selector}`, form)
   if (formId)
@@ -657,22 +648,11 @@ function appendAdditionalInput(formData, selector) {
 function appendParameter(formData, data) {
   if (!isFormData(formData) || !isObject(data))
     return
-  for (const [key, values] of Object.entries(data)) {
+  for (const [key, values] of objectEntries(data)) {
     formData.delete(key)
     formData.delete(`${key}[]`)
     toArray(values).forEach(value => formData.append(key, value))
   }
-}
-
-function deleteInputPropValue(formData) {
-  if (isFormData(formData))
-    return Array.from(new Set(formData.keys()))
-      .filter(key => startsWith(key, '_').exist)
-      .reduce((acc, key) => {
-        acc[key] = formData.getAll(key)
-        formData.delete(key)
-        return acc
-      }, {})
 }
 
 function deleteInputHeader(form, formData, attrName) {
@@ -697,7 +677,7 @@ function processCheckboxValue(formData, form) {
     return acc
   }, {})
 
-  for (const [name, elems] of Object.entries(group)) {
+  for (const [name, elems] of objectEntries(group)) {
     formData.delete(name)
     elems.forEach(({ checked }) => formData.append(name, checked))
   }
@@ -711,7 +691,7 @@ function processInputDateValue(formData, form) {
     return acc
   }, {})
 
-  for (const [name, elems] of Object.entries(group)) {
+  for (const [name, elems] of objectEntries(group)) {
     formData.delete(name)
     elems.forEach(({ value }) =>
       isNotBlank(value) && formData.append(name, new Date(value).getTime()))
@@ -719,10 +699,10 @@ function processInputDateValue(formData, form) {
 }
 
 function formDataToObject(formData) {
-  const result = {}
   if (!isFormData(formData))
-    return result
+    return formData
 
+  let result = {}
   for (const [key, value] of formData.entries()) {
     const keys = key
       .replace(/\[(\d*)\]/g, (_, index) => (index ? `.${index}` : '.[]'))
@@ -784,7 +764,7 @@ window.addEventListener('DOMContentLoaded', event => {
     querySelector(selector, el, true).forEach(form => AjaxFormSubmit.instance.create(form)))
 
   const additional = [ 'querystring' ]
-  for (const [key, value] of Object.entries(formSubmitAuto)) {
+  for (const [key, value] of objectEntries(formSubmitAuto)) {
     toArray(value).forEach(form => form.submit({ additional }).catch(ignored => {}))
   }
 }, { once: true })

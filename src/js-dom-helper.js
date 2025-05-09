@@ -1,3 +1,4 @@
+import { OBJECT, FUNCTION, ARRAY, STRING_NON_BLANK, HTML_ELEMENT } from './js-constant.js'
 import {
   assert,
   hasValue,
@@ -99,7 +100,7 @@ export default class DOMHelper {
 
   setValueToElement(el, value, opts = {}) {
     const { template } = opts
-    assert(isElement(el), 1, 'HTMLElement')
+    assert(isElement(el), 1, HTML_ELEMENT)
     
     const templateProp = getTemplateSelector(el, template, this.#datasetHelper)
     if (isArray(value) || isNotBlank(templateProp)) {
@@ -123,8 +124,8 @@ export default class DOMHelper {
   }
 
   setArrayToElement(el, arr, opts = {}) {
-    assert(isElement(el), 1, 'HTMLElement')
-    assert(isArray(arr), 2, 'Array')
+    assert(isElement(el), 1, HTML_ELEMENT)
+    assert(isArray(arr), 2, ARRAY)
 
     if (el.hasAttribute?.(this.#datasetHelper.keyToAttrName('array-length'))) {
       this.setValue(el, [ arr.length ])
@@ -163,16 +164,15 @@ export default class DOMHelper {
   }
 
   appendElement(el, data, templateProp) {
-    assert(isElement(el), 1, 'HTMLElement')
+    assert(isElement(el), 1, HTML_ELEMENT)
 
     if (elementIs(el, ['input', 'select'])) {
       el.value = data
       return el
     } else {
-      const newElem = this.createElement(data, createTemplate(templateProp, {
+      const newElem = this.createElement(data, createTemplate(templateProp, data, {
         datasetHelper: this.#datasetHelper,
         parent: el,
-        data: data,
         withDefault: true,
         preventClone: true
       }))
@@ -182,7 +182,7 @@ export default class DOMHelper {
   }
 
   createElement(data, templateProp) {
-    let newElem = createTemplate(templateProp)
+    let newElem = createTemplate(templateProp, data)
 
     assert(isElement(newElem), `template not found: ${templateProp}`)
 
@@ -194,17 +194,17 @@ export default class DOMHelper {
   }
 
   clearElement(el) {
-    assert(isElement(el), 1, 'HTMLElement')
+    assert(isElement(el), 1, HTML_ELEMENT)
     querySelector(`.${CREATE_CLASS_NAME}`, el, true).forEach(elem => elem.remove())
     querySelector(`.${FILLED_CLASS_NAME}`, el, true).forEach(elem => this.setValue(elem, ['']))
     this.#datasetHelper.setValue(el, 'array-seq', 0)
   }
 
   fillElement(el, obj, datasetName, handler) {
-    assert(isElement(el), 1, 'HTMLElement')
-    assert(isObject(obj), 2, 'Object')
-    assert(isNotBlank(datasetName), 3, 'NonBlankString')
-    assert(isFunction(handler), 4, 'Function')
+    assert(isElement(el), 1, HTML_ELEMENT)
+    assert(isObject(obj), 2, OBJECT)
+    assert(isNotBlank(datasetName), 3, STRING_NON_BLANK)
+    assert(isFunction(handler), 4, FUNCTION)
 
     const attrValue = this.#datasetHelper.getValue(el, datasetName, '')
     const keys = split(attrValue, ',')
@@ -227,14 +227,14 @@ export default class DOMHelper {
   }
 
   setDisplay(el, data) {
-    assert(isElement(el), 1, 'HTMLElement')
+    assert(isElement(el), 1, HTML_ELEMENT)
 
     const { keyToAttrName, getValue } = this.#datasetHelper
     const hiddenKey = 'hidden'
     querySelector(`[${keyToAttrName(hiddenKey)}]`, el, true).forEach(elem => {
       const filter = createFilter(getValue(elem, hiddenKey))
-      const result = filter.attributes.reduce((isValid, attribute) => {
-        return isValid && filter.filter(attribute, findObjectValue(data, attribute).value)
+      const result = filter.keys.reduce((isValid, key) => {
+        return isValid && filter.filter(key, findObjectValue(data, key).value)
       }, true)
 
       if (result) {
@@ -247,8 +247,8 @@ export default class DOMHelper {
     const filterKey = 'filter'
     querySelector(`[${keyToAttrName(filterKey)}]`, el, true).forEach(elem => {
       const filter = createFilter(getValue(elem, filterKey))
-      const result = filter.attributes.reduce((isValid, attribute) => {
-        return isValid && filter.filter(attribute, findObjectValue(data, attribute).value)
+      const result = filter.keys.reduce((isValid, key) => {
+        return isValid && filter.filter(key, findObjectValue(data, key).value)
       }, true)
 
       if (!result) {
@@ -259,7 +259,7 @@ export default class DOMHelper {
   }
 
   setClass(el, classNames) {
-    assert(isElement(el), 1, 'HTMLElement')
+    assert(isElement(el), 1, HTML_ELEMENT)
 
     const enums = this.#datasetHelper.getValue(el, 'class-enum')
     const valueFormat = this.generateValue(classNames, { enums })
@@ -267,7 +267,7 @@ export default class DOMHelper {
   }
 
   setAttr(el, values, attrName) {
-    assert(isElement(el), 1, 'HTMLElement')
+    assert(isElement(el), 1, HTML_ELEMENT)
     //TODO attr case insensitive
     let tag = attrName.replace('attr-', '')
     const valueFormat = this.generateValue(values, {
@@ -291,7 +291,7 @@ export default class DOMHelper {
   }
 
   setValue(el, values) {
-    assert(isElement(el), 1, 'HTMLElement')
+    assert(isElement(el), 1, HTML_ELEMENT)
 
     addClass(el, FILLED_CLASS_NAME)
     const valueFormat = this.generateValue(values, {
@@ -363,15 +363,15 @@ function getTemplateSelector(el, value, datasetHelper) {
   return value
 }
 
-function createTemplate(templateProp, opts = {}) {
-  const { parent, data, datasetHelper, withDefault, preventClone } = opts
+function createTemplate(templateProp, data, opts = {}) {
+  const { parent, datasetHelper, withDefault, preventClone } = opts
   let templateElem
 
   if (isElement(templateProp)) {
     templateElem = preventClone ? templateProp : templateProp.cloneNode(true)
   } else {
     const templateSelector = getTemplateSelector(parent, templateProp, datasetHelper)
-    templateElem = createTemplateHandler(templateProp).getTemplate()
+    templateElem = createTemplateHandler(templateProp).getTemplate(data)
   }
 
   if (!isElement(templateElem) && withDefault) {

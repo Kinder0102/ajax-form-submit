@@ -1,3 +1,4 @@
+import { STRING_NON_BLANK, FUNCTION } from './js-constant.js'
 import {
   assert,
   isFunction,
@@ -22,8 +23,8 @@ let AFTER_HANDLERS = {
 export default class AjaxFormSubmitResetHandler {
 
   static add = (type, callback, after) => {
-    assert(isNotBlank(type), 1, 'NonBlankString')
-    assert(isFunction(callback), 1, 'Function')
+    assert(isNotBlank(type), 1, STRING_NON_BLANK)
+    assert(isFunction(callback), 1, FUNCTION)
     if (after) {
       AFTER_HANDLERS[type] = callback
     } else {
