@@ -1,28 +1,31 @@
 import {
   OBJECT,
   STRING_NON_BLANK,
+  HTML_CHECKBOX,
+  HTML_RADIO,
   ERROR_CONFIRM,
   ERROR_VALIDATION
 } from './js-constant.js'
 
 import {
   assert,
-  startsWith,
+  hasValue,
   isArray,
+  isInteger,
   isNotBlank,
   isObject,
-  hasValue,
+  startsWith,
   delay,
   valueToString,
   toCamelCase,
   toKebabCase,
   toArray,
   objectKeys,
-  objectEntries,
-  deepFilterArrays
+  objectEntries
 } from './js-utils.js'
 
 import {
+  isElement,
   elementIs,
   hasClass,
   addClass,
@@ -97,9 +100,9 @@ const DEFAULT_CONFIG = {
     getData: res => res?.data?.item,
     getPage: res => res?.data?.page,
     getError: (error = {}) => (
-      (error.code && (AjaxFormSubmit.config.i18n?.code?.[error.code] || error.code)) ||
-      (error.status && (AjaxFormSubmit.config.i18n?.status?.[error.status] || error.status)) ||
-      error.message
+      (AjaxFormSubmit.config.i18n?.code?.[error.code] || error.code) ||
+      (AjaxFormSubmit.config.i18n?.status?.[error.status] || error.status) ||
+      error.message || error
     )
   },
   getCsrfToken: () => ({
@@ -114,7 +117,7 @@ SuccessHandler.add('apply', handleEvent(FORM_EVENT_APPLY))
 SuccessHandler.add('trigger', handleEvent(FORM_EVENT_TRIGGER))
 SuccessHandler.add('reset', handleEvent(FORM_EVENT_RESET))
 
-class AjaxFormSubmit {
+export default class AjaxFormSubmit {
   static config = {}
   static middleware = new MiddlewareFactory()
   static instance = createInstanceMap(
@@ -152,7 +155,10 @@ class AjaxFormSubmit {
     this.initAutoSubmit()
     this.initSuccessHandler()
 
-    registerEvent(this.#root, FORM_EVENT_SUBMIT, event => this.submitSync({ event }))
+    registerEvent(this.#root, FORM_EVENT_SUBMIT, event => {
+      stopDefaultEvent(event)
+      this.submitSync()
+    })
     registerEvent(this.#root, FORM_EVENT_APPLY, this.#handleEventApplied.bind(this))
     registerEvent(this.#root, FORM_EVENT_TRIGGER, this.#handleEventTriggered.bind(this))
     registerEvent(this.#root, FORM_EVENT_RESET, this.#handleEventReset.bind(this))
@@ -236,15 +242,14 @@ class AjaxFormSubmit {
   }
 
   submit(opt = {}) {
-    stopDefaultEvent(opt?.event)
-    return this.#handleBefore(opt)
-      .then(({ request, options }) => {
-        opt = options
-        return this.#handleValidation(request, opt)
-      })
-      .then(request => this.#handleRequest(request, opt))
-      .then(({ request, response }) => this.#handleResponse(request, response, opt))
-      .then(({ request, response }) => this.#handleAfter(request, response, opt))
+    const { data, props } = this.#generateDataAndProps(opt)
+    const options = { ...opt, props }
+
+    return this.#handleBefore(data, options)
+      .then(request => this.#handleValidation(request, options))
+      .then(request => this.#handleRequest(request, options))
+      .then(({ request, response }) => this.#handleResponse(request, response, options))
+      .then(({ request, response }) => this.#handleAfter(request, response, options))
       .catch(error => {
         switch (error?.message) {
           case ERROR_VALIDATION:
@@ -253,7 +258,7 @@ class AjaxFormSubmit {
             this.#resetUIControls()
             break
           default:
-            this.#handleError(error, opt)
+            this.#handleError(error, options)
             throw error
         }
       })
@@ -278,7 +283,7 @@ class AjaxFormSubmit {
     const attrName = this.#datasetHelper.keyToAttrName('trigger')
     const triggers = [
       ...querySelector(props.value),
-      ...findFormElem(this.#root, `button[type="submit"], button:not([type]), [${attrName}]`)
+      ...querySelector(`button[type="submit"], button:not([type]), [${attrName}]`, this.#root)
     ]
     triggers.forEach(el => {
       if (elementIs(el, TRIGGER_CLICKABLE)) {
@@ -302,31 +307,17 @@ class AjaxFormSubmit {
     return controls
   }
 
-  #handleBefore(opt = {}) {
-    let request = isObject(opt.data) ? opt.data : this.#generateFormData(opt)
-    request = formDataToObject(request)
-
-    const props = objectKeys(request).reduce((acc, key) => {
-      const { exist, value } = startsWith(key, '_')
-      if (exist) {
-        acc[value] = request[key]
-        delete request[key]
-      }
-      return acc
-    }, {})
-
-    const options = { ...opt, props }
-    const middlewareProps = this.#getParameters('middleware-before', options)
+  #handleBefore(request, opt) {
+    const middlewareProps = this.#getParameters('middleware-before', opt)
     const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
-
     return middleware({ request, root: this.#root }).then(result => {
       this.#resetUIControls()
-      this.successHandler?.before?.(options.props)
-      return { request: hasValue(result?.request) ? result.request : request, options }
+      this.successHandler?.before?.(opt.props)
+      return hasValue(result?.request) ? result.request : request
     })
   }
 
-  #handleValidation(request, opt = {}) {
+  #handleValidation(request, opt) {
     const middlewareProps = this.#getParameters('middleware-validation', opt)
     const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
     const fields = new Set()
@@ -368,7 +359,7 @@ class AjaxFormSubmit {
     })
   }
 
-  #handleRequest(request, opt = {}) {
+  #handleRequest(request, opt) {
     const middlewareProps = this.#getParameters('middleware-request', opt)
     const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
     const type = this.#getParameters('type', opt)[0] || 'ajax'
@@ -380,7 +371,6 @@ class AjaxFormSubmit {
       enctype: this.#getParameters('enctype', opt)[0],
       csrf: this.#config.get('getCsrfToken')['getCsrfToken']?.(),
       headers: findFormElem(this.#root, `[${inAttr}="header"]`)
-        .filter(elem => elem.name)
         .reduce((acc, { name, value }) => {
           acc[name] = value
           return acc
@@ -401,7 +391,7 @@ class AjaxFormSubmit {
       })
   }
 
-  #handleResponse(request, response, opt = {}) {
+  #handleResponse(request, response, opt) {
     const { checkResponse, getPage } = this.#config.get([
       'response.checkResponse',
       'response.getPage'
@@ -421,7 +411,7 @@ class AjaxFormSubmit {
     })
   }
 
-  #handleAfter(request, response, opt = {}) {
+  #handleAfter(request, response, opt) {
     const { getData, getPage } = this.#config.get(['response.getData', 'response.getPage'])
     const middlewareProps = this.#getParameters('middleware-after', opt)
     const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
@@ -443,7 +433,7 @@ class AjaxFormSubmit {
     })
   }
 
-  #handleError(error, opt = {}) {
+  #handleError(error, opt) {
     console.error(error)
     const { getError } = this.#config.get(['response.getError'])
     this.#resetUIControls()
@@ -491,20 +481,17 @@ class AjaxFormSubmit {
           const typeAttr = `[${attrName}-${type}="${key}"]`
 
           findFormElem(this.#root, `${allAttr},${typeAttr}`)
-            .filter(elem => elem.name)
             .forEach(({ name }) => this.#parameters.apply[name] = values)
         }
 
       } else if (hasValue(applyData)) {
         findFormElem(this.#root, `[${attrName}="${FORM_APPLY_CLASS_NAME}-${type}"]`)
-          .filter(elem => elem.name)
           .forEach(({ name }) => this.#parameters.apply[name] = valueToString(applyData))
       }
     }
   }
 
   #handleEventTriggered(event) {
-    stopDefaultEvent(event)
     this.#handleEventApplied(event)
     this.submitSync({ parameter: event?.detail?.props?.parameter })
   }
@@ -542,26 +529,40 @@ class AjaxFormSubmit {
   }
 
 
-  #generateFormData(opt = {}) {
-    const formData = new FormData(this.#root)
+  #generateDataAndProps(opt = {}) {
+    if (isObject(opt.data))
+      return { data: opt.data }
 
-    //TODO need finetune
-    appendAdditionalInput(formData, this.#datasetHelper.getValue(this.#root, 'input'))
+    const attrBlacklist = [
+      this.#datasetHelper.keyToAttrName('in')
+    ]
+    let result = {}
+    for (const name in this.#root.elements) {
+      const el = this.#root.elements[name]
+      if (!isInteger(name))
+        setNestedValue(result, name, getElementValue(el, name, attrBlacklist))
+    }
+
+    querySelector(this.#datasetHelper.getValue(this.#root, 'input')).forEach(elem => {
+      if (isNotBlank(elem.name))
+        setNestedValue(result, elem.name, getElementValue(elem, elem.name, attrBlacklist))
+    })
 
     PARAMETER.forEach(({ name, required }) => {
       if (required || opt.parameter?.includes(name))
-        appendParameter(formData, this.#parameters[name])
+        objectEntries(this.#parameters[name]).forEach(([key, value]) => result[key] = value)
     })
 
-    processCheckboxValue(formData, this.#root)
-    processInputDateValue(formData, this.#root)
+    const props = objectKeys(result).reduce((acc, key) => {
+      const { exist, value } = startsWith(key, '_')
+      if (exist) {
+        acc[value] = result[key]
+        delete result[key]
+      }
+      return acc
+    }, {})
 
-    //TODO need finetune
-    const headerAttr = this.#datasetHelper.keyToAttrName('header')
-    deleteInputHeader(this.#root, formData, headerAttr)
-
-    // TODO set default
-    return formData
+    return { data: deepFilterArrays(result), props }
   }
 
   #resetUIControls() {
@@ -612,116 +613,84 @@ function checkHiddenInputValidation(form, input) {
   return fields
 }
 
-function appendAdditionalInput(formData, selector) {
-  if (!isFormData(formData) || !isNotBlank(selector))
+function setNestedValue(obj, name, value) {
+  if (!hasValue(value))
     return
 
-  querySelector(selector)
-    .filter(input => isNotBlank(input.name) && !input.hasAttribute('disabled'))
-    .forEach(input => {
-      switch(input.type) {
-        case 'checkbox':
-          formData.append(input.name, input.checked)
-          break
-        case 'radio':
-          input.checked && formData.append(input.name, input.value)
-          break
-        default:
-          formData.append(input.name, input.value)
-      }
-    })
-}
-
-function appendParameter(formData, data) {
-  if (!isFormData(formData) || !isObject(data))
-    return
-  for (const [key, values] of objectEntries(data)) {
-    formData.delete(key)
-    formData.delete(`${key}[]`)
-    toArray(values).forEach(value => formData.append(key, value))
-  }
-}
-
-function deleteInputHeader(form, formData, attrName) {
-  if (!isFormData(formData))
-    return
-  const headerNames = findFormElem(form, `[${attrName}]`)
-    .filter(elem => isNotBlank(elem.name))
-    .map(elem => elem.name)
-
-  Array.from(new Set(formData.keys()))
-    .filter(key => headerNames.includes(key))
-    .forEach(key => formData.delete(key))
-}
-
-function processCheckboxValue(formData, form) {
-  const group = findFormElem(form, `input[type="checkbox"]:not(:disabled)`).reduce((acc, elem) => {
-    if (isNotBlank(elem.name) && (!isNotBlank(elem.value) || elem.value === 'on')) {
-      acc[elem.name] ||= []
-      acc[elem.name].push(elem)
-    }
-    return acc
-  }, {})
-
-  for (const [name, elems] of objectEntries(group)) {
-    formData.delete(name)
-    elems.forEach(({ checked }) => formData.append(name, checked))
-  }
-}
-
-function processInputDateValue(formData, form) {
-  const group = findFormElem(form, `input[type^="date"]:not(:disabled)`).reduce((acc, elem) => {
-    acc[elem.name] ||= []
-    acc[elem.name].push(elem)
-    return acc
-  }, {})
-
-  for (const [name, elems] of objectEntries(group)) {
-    formData.delete(name)
-    elems.forEach(({ value }) =>
-      isNotBlank(value) && formData.append(name, new Date(value).getTime()))
-  }
-}
-
-function formDataToObject(formData) {
-  if (!isFormData(formData))
-    return formData
-
-  let result = {}
-  for (const [key, value] of formData.entries()) {
-    const keys = key
-      .replace(/\[(\d*)\]/g, (_, index) => (index ? `.${index}` : '.[]'))
-      .split('.')
-
-    keys.reduce((acc, current, index) => {
-      const isLast = index === keys.length - 1
-
-      if (isLast) {
-        if (current === '[]') {
-          if (!isArray(acc))
-            acc = []
-          acc.push(value)
-        } else if (hasValue(acc[current])) {
-          if (!isArray(acc[current]))
-            acc[current] = [acc[current]]
-          acc[current].push(value)
-        } else {
-          acc[current] = value
-        }
+  const keys = name.replace(/\[(\d*)\]/g, (_, i) => i ? `.${i}` : '.[]').split('.')
+  keys.reduce((acc, key, index) => {
+    if (index === keys.length - 1) {
+      if (key === '[]') {
+        if (!isArray(acc))
+          acc = []
+        acc.push(...toArray(value))
+      } else if (hasValue(acc[key])) {
+        if (!isArray(acc[key]))
+          acc[key] = [acc[key]]
+        acc[key].push(value)
       } else {
-        if (current === '[]') {
-          if (!isArray(acc))
-            acc[current] = []
-        } else if (!acc[current]) {
-          acc[current] = /^\d+$/.test(keys[index + 1]) || keys[index + 1] === '[]' ? [] : {}
-        }
+        acc[key] = value
       }
+    } else {
+      if (key === '[]') {
+        if (!isArray(acc))
+          acc[key] = []
+      } else if (!acc[key]) {
+        const nextKey = keys[index + 1]
+        acc[key] = /^\d+$/.test(nextKey) || nextKey === '[]' ? [] : {}
+      }
+    }
+    return acc[key]
+  }, obj)
+}
 
-      return acc[current]
-    }, result)
+function getElementValue(el, name, attrBlacklist = [], multiple) {
+  if (el instanceof RadioNodeList) {
+    if (elementIs(el[0], HTML_RADIO)) {
+      return el.value
+    } else {
+      const result = toArray(el)
+        .map(elem => getElementValue(elem, name, attrBlacklist, true))
+        .flat()
+        .filter(hasValue)
+      return result.length > 1 ? result : (name.includes('[]') ? result : result[0])
+    }
+  } else if (isElement(el)) {
+    if (el.disabled || el.name != name)
+      return
+    if (attrBlacklist.some(attr => el.hasAttribute(attr)))
+      return
+    const { type, value, checked, files } = el
+    switch(type) {
+      case HTML_CHECKBOX:
+        return multiple ? (checked ? value : null) : checked
+      case HTML_RADIO:
+        return checked ? value : null
+      case 'date':
+      case 'datetime-local':
+        return isNotBlank(value) ? new Date(value).getTime(): null
+      case 'file':
+        return el.multiple ? toArray(files) : files[0]
+      case 'select-multiple':
+        return toArray(el.selectedOptions).map(opt => opt.value)
+      default:
+        return value
+    }
   }
+}
 
-  return deepFilterArrays(result)
+function deepFilterArrays(obj) {
+  if (obj instanceof File || obj instanceof Blob || obj instanceof Date)
+    return obj
+
+  if (isArray(obj)) {
+    return obj.filter(value => hasValue(value)).map(deepFilterArrays)
+  } else if (isObject(obj)) {
+    return Object.fromEntries(
+      objectEntries(obj).map(([key, value]) => [key, deepFilterArrays(value)])
+    )
+  }
+  return obj
 }
 
 function classifyMessageControl(controls) {
@@ -738,10 +707,7 @@ function classifyMessageControl(controls) {
   return { inputMessage, outputMessage, pageMessage }
 }
 
-function isFormData(formData) {
-  return formData instanceof FormData
-}
-
+window.AjaxFormSubmit = AjaxFormSubmit
 window.addEventListener('DOMContentLoaded', event => {
   const selector = `.${FORM_CLASS_NAME}`
   querySelector(selector).forEach(form => AjaxFormSubmit.instance.create(form))
@@ -753,6 +719,3 @@ window.addEventListener('DOMContentLoaded', event => {
     toArray(value).forEach(form => form.submit({ parameter }).catch(ignored => {}))
   }
 }, { once: true })
-
-export { AjaxFormSubmit }
-window && (window.AjaxFormSubmit = AjaxFormSubmit)

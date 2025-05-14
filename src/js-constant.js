@@ -8,5 +8,10 @@ export const STRING_NON_BLANK = 'NonBlankString'
 export const DOCUMENT = 'document'
 export const HTML_ELEMENT = 'HTMLElement'
 
+export const HTML_INPUT = 'input'
+export const HTML_SELECT = 'select'
+export const HTML_CHECKBOX = 'checkbox'
+export const HTML_RADIO = 'radio'
+
 export const ERROR_CONFIRM = 'CONFIRM'
 export const ERROR_VALIDATION = 'VALIDATION'

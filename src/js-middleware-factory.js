@@ -5,9 +5,12 @@ import { createProperty } from './js-property-factory.js'
 export default class MiddlewareFactory {
 
   #middlewares
+  #debug
 
-  constructor() {
+  constructor(opts = {}) {
+    this.#debug = isTrue(opts.debug)
     this.#middlewares = {
+      debug: (...args) => console.log(...args),
       alert: ({ text, title }) => alert(text),
       confirm: ({ text, title }) => (confirm(text) ? Promise.resolve() : Promise.reject(new Error(ERROR_CONFIRM))),
       prompt: input => {
@@ -42,6 +45,7 @@ export default class MiddlewareFactory {
       assert(isFunction(callback), `Could not find "${selectType}" in middlewares`)
       result.push({ callback, skip, params })
     }
+    this.#debug && result.push({ callback: this.#middlewares.debug })
     return wrapPromise(result)
   }
 }
@@ -53,7 +57,7 @@ function wrapPromise(callbacks) {
     let promise = Promise.resolve(arg)
     try {
       for (const { callback, skip, params } of callbacks) {
-        const shouldSkip = await skip.apply(this, [ params, updatedArg ])
+        const shouldSkip = await skip?.apply(this, [ params, updatedArg ])
         if (shouldSkip)
           continue
         promise = promise.then(result => {

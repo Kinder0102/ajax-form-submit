@@ -1,4 +1,4 @@
-import { isArray, isNotBlank, objectEntries, addBasePath, formatUrl } from './js-utils.js'
+import { isArray, isNotBlank, toArray, objectEntries, addBasePath, formatUrl } from './js-utils.js'
 
 const WITH_DATA_METHOD = [ 'POST', 'PUT', 'PATCH' ]
 
@@ -9,7 +9,7 @@ function request(opt, input, requestParams) {
   const { formData, hasFile } = objectToFormData(input)
   const { method = 'POST', url, csrf, headers = {}, enctype = '' } = requestParams
   const isWithDataMethod = WITH_DATA_METHOD.includes(method.toUpperCase())
-  const param = Array.from(new URLSearchParams(formData).entries())
+  const param = toArray(new URLSearchParams(formData).entries())
     .map(([key, value]) => `${encodeURIComponent(key.replace(/\[\]$/, ''))}=${encodeURIComponent(value)}`)
     .join('&')
   const urlParam = isWithDataMethod ? '' :  `?${param}`

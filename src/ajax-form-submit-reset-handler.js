@@ -1,4 +1,4 @@
-import { STRING_NON_BLANK, FUNCTION } from './js-constant.js'
+import { STRING_NON_BLANK, FUNCTION, HTML_CHECKBOX, HTML_RADIO } from './js-constant.js'
 import { assert, isFunction, isNotBlank } from './js-utils.js'
 import { querySelector, triggerEvent } from './js-dom-utils.js'
 
@@ -48,7 +48,7 @@ function clear(el, opt) {
       return
 
     field.defaultValue = ''
-    if (type === 'checkbox' || type === 'radio')
+    if (type === HTML_CHECKBOX || type === HTML_RADIO)
       field.defaultChecked = false
     if (tag === 'select') {
       const options = field.options
