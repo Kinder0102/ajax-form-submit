@@ -72,11 +72,11 @@ export function querySelector(selectors, el, withSelf = false) {
       } catch(ignored) { }
     }
   }
-  return Array.from(result)
+  return toArray(result)
 }
 
 export function getTargets(targets, el) {
-  const input = toArray(targets, ',')
+  const input = split(targets, ',')
   const result = new Set()
 
   input.forEach(target => {
@@ -101,7 +101,7 @@ export function getTargets(targets, el) {
       }
     }
   })
-  return Array.from(result)
+  return toArray(result)
 }
 
 export function showElements(elements) {

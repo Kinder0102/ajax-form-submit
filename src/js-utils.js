@@ -19,6 +19,10 @@ export function assert(condition, message, type) {
   }
 }
 
+export function hasValue(value) {
+  return value != null
+}
+
 export function isBoolean(value) {
   return typeof value === 'boolean' || value instanceof Boolean
 }
@@ -31,8 +35,12 @@ export function isInteger(value) {
   return Number.isInteger(Number(value))
 }
 
+export function isString(str) {
+  return typeof str === 'string'
+}
+
 export function isNotBlank(str) {
-  return typeof str === 'string' && str.trim().length > 0
+  return isString(str) && str.trim().length > 0
 }
 
 export function isFunction(func) {
@@ -44,23 +52,23 @@ export function isPromise(p) {
 }
 
 export function isObject(obj) {
-  return obj !== null && typeof obj === 'object' && typeof obj !== 'function' && !isArray(obj)
+  return hasValue(obj) && typeof obj === 'object' && !isFunction(obj) && !isArray(obj)
 }
 
 export function isURL(str) {
   return !!new RegExp(URL_PATTERN).test(str)
 }
 
-export function hasValue(value) {
-  return value != null
-}
-
-export function toArray(value, separator) {
-  if (!hasValue(value))
+export function toArray(value, mapFn, thisArg) {
+  if (!hasValue(value)) {
     return []
-  if (isNotBlank(separator) && isNotBlank(value))
-    return split(value, separator).filter(hasValue)
-  return (isArray(value) ? value : [ value ]).filter(hasValue)
+  } else if (isArray(value)) {
+    return value.filter(hasValue)
+  } else if (!isString(value) && isFunction(value[Symbol.iterator])) {
+    return Array.from(value, mapFn, thisArg).filter(hasValue)
+  } else {
+    return [ value ]
+  }
 }
 
 export function delay(time) {
@@ -88,9 +96,9 @@ export function stringToValue(str) {
 
 export function split(str, delimiter) {
   if (isArray(str))
-    return str
-  if (typeof str !== 'string')
-    return [str]
+    return str.filter(hasValue)
+  if (!isString(str))
+    return [str].filter(hasValue)
   if (!isNotBlank(str))
     return []
 
@@ -231,20 +239,6 @@ export function formatUrl(url, parameters) {
     }
   }
   return result
-}
-
-export function deepFilterArrays(obj) {
-  if (obj instanceof File || obj instanceof Blob || obj instanceof Date)
-    return obj
-
-  if (isArray(obj)) {
-    return obj.filter(value => hasValue(value)).map(deepFilterArrays)
-  } else if (isObject(obj)) {
-    return Object.fromEntries(
-      objectEntries(obj).map(([key, value]) => [key, deepFilterArrays(value)])
-    )
-  }
-  return obj
 }
 
 export function addBasePath(url, basePath) {

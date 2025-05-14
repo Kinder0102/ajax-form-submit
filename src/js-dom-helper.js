@@ -1,4 +1,14 @@
-import { OBJECT, FUNCTION, ARRAY, STRING_NON_BLANK, HTML_ELEMENT } from './js-constant.js'
+import {
+  OBJECT,
+  FUNCTION,
+  ARRAY,
+  STRING_NON_BLANK,
+  HTML_ELEMENT,
+  HTML_INPUT,
+  HTML_SELECT,
+  HTML_CHECKBOX
+} from './js-constant.js'
+
 import {
   assert,
   hasValue,
@@ -6,7 +16,6 @@ import {
   isNotBlank,
   isArray,
   isObject,
-  isFunction,
   valueToString,
   stringToValue,
   split,
@@ -48,7 +57,7 @@ const TEMPLATE_KEY = 'template'
 const ELEMENT_CACHE = createCache()
 
 let SET_VALUE_HANDLERS = {
-  input: (el, value, props) => el.type === 'checkbox' ? (el.checked = isTrue(value)) : (el.value = value),
+  input: (el, value, props) => el.type === HTML_CHECKBOX ? (el.checked = isTrue(value)) : (el.value = value),
   select: (el, value, props) => el.value = value,
   a: (el, value, props) => el.setAttribute('href', addBasePath(value, props.basePath)),
   img: (el, value, props) => el.setAttribute('src', value),
@@ -172,7 +181,7 @@ export default class DOMHelper {
   }
 
   #appendElement(el, data, template) {
-    if (elementIs(el, ['input', 'select'])) {
+    if (elementIs(el, [HTML_INPUT, HTML_SELECT])) {
       el.value = data
     } else {
       const elem = createTemplateHandler(template).getTemplate(data)
@@ -341,9 +350,9 @@ function createEnums(props) {
     } else {
       const el = querySelector(props)[0]
       if (isElement(el)) {
-        if (elementIs(el, 'input')) {
+        if (elementIs(el, HTML_INPUT)) {
           enums ||= stringToValue(el.value)
-        } else if (elementIs(el, 'select')) {
+        } else if (elementIs(el, HTML_SELECT)) {
           querySelector('option', el).forEach(elem => {
             enums[elem.value] = elem.textContent
           })

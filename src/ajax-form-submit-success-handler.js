@@ -6,8 +6,10 @@ import {
   isArray,
   isObject,
   isFunction,
+  isString,
   isNotBlank,
   hasValue,
+  toArray,
   objectKeys,
   objectEntries,
   valueToString,
@@ -17,7 +19,6 @@ import {
 
 import {
   isElement,
-  querySelector,
   triggerEvent,
   showElements,
   hideElements,
@@ -185,7 +186,7 @@ function handleDisplay() {
       })
     },
     request: (input, output, { target }, { domHelper, datasetHelper }) => {
-      const mock = Array.from({ length: input.size || 1 }, () => ({}))
+      const mock = toArray({ length: input.size || 1 }, () => ({}))
       getTargets(target).forEach(elem => {
         const { skeleton: [template] = [] } = createProperty(datasetHelper.getValue(elem, 'template'))[0]
         isNotBlank(template) && domHelper?.setValueToElement?.(elem, mock, { template, group })
@@ -226,7 +227,7 @@ function handleUpdateQueryString(input, output, { add, remove, value }) {
       } else if (isObject(val)) {
         searchParams.set(key, JSON.stringify(val))
       } else if (hasValue(val)) {
-        if (typeof val === 'string') {
+        if (isString(val)) {
           isNotBlank(val) ? searchParams.set(key, val) : searchParams.delete(key)
         } else {
           searchParams.set(key, val)

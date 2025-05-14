@@ -63,7 +63,7 @@ function handleMock(opt, input) {
   const totalElements = 500
   const totalPages = Math.floor(totalElements / size)
   return {
-    data: Array.from({ length: size }, () => ({})),
+    data: toArray({ length: size }, () => ({})),
     page: { size, number, totalElements, totalPages }
   }
 }
