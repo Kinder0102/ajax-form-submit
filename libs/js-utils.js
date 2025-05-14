@@ -71,10 +71,6 @@ export function toArray(value, mapFn, thisArg) {
   }
 }
 
-export function delay(time) {
-  return new Promise(resolve => setTimeout(resolve, time))
-}
-
 export function valueToString(value) {
   if (isObject(value) || isArray(value))
     return JSON.stringify(value)
@@ -250,6 +246,70 @@ export function addBasePath(url, basePath) {
   return basePath + url
 }
 
+export function delay(time) {
+  return new Promise(resolve => setTimeout(resolve, time))
+}
+
+export function debounce(callback, delay = 200, { leading = false, trailing = true } = {}) {
+  let timeout = null
+  let lastArgs = null
+  let hasCalledLeading = false
+
+  return function debounced(...args) {
+    lastArgs = args
+
+    clearTimeout(timeout)
+    timeout = setTimeout(() => {
+      timeout = null
+      if (trailing && (!leading || hasCalledLeading)) {
+        callback.apply(this, lastArgs)
+      }
+      hasCalledLeading = false
+    }, delay)
+
+    if (leading && !timeout) {
+      callback.apply(this, args)
+      hasCalledLeading = true
+    }
+  }
+}
+
+export function throttle(callback, wait = 200, { leading = true, trailing = true } = {}) {
+  let lastCallTime = 0
+  let timeout = null
+  let lastArgs = null
+
+  function invokeFn(time) {
+    lastCallTime = time
+    callback.apply(this, lastArgs)
+    lastArgs = null
+  }
+
+  return function throttled(...args) {
+    const now = Date.now()
+    const remaining = wait - (now - lastCallTime)
+    lastArgs = args
+
+    if (remaining <= 0 || lastCallTime === 0) {
+      if (timeout) {
+        clearTimeout(timeout)
+        timeout = null
+      }
+      if (leading) {
+        invokeFn.call(this, now)
+      } else {
+        lastCallTime = now
+      }
+    } else if (trailing && !timeout) {
+      timeout = setTimeout(() => {
+        timeout = null
+        if (trailing) {
+          invokeFn.call(this, Date.now())
+        }
+      }, remaining)
+    }
+  }
+}
 
 function checkPrefixOrSuffix(str, mark, isStart) {
   assert(isNotBlank(mark), 2, STRING_NON_BLANK)

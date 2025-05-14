@@ -4,19 +4,24 @@
   "description": "A lightweight module for submitting HTML forms via AJAX",
   "type": "module",
   "main": "./src/ajax-form-submit.js",
+  "imports": {
+    "#libs/*": "./libs/*.js"
+  },
   "exports": {
     ".": "./src/ajax-form-submit.js",
-    "./js-constant": "./src/js-constant.js",
-    "./js-utils": "./src/js-utils.js",
-    "./js-dom-utils": "./src/js-dom-utils.js",
-    "./js-config": "./src/js-config.js",
-    "./js-cache": "./src/js-cache.js",
-    "./js-dataset-helper": "./src/js-dataset-helper.js",
-    "./js-dom-helper": "./src/js-dom-helper.js",
-    "./js-property-factory": "./src/js-property-factory.js"
+    "./pagination": "./src/pagination.js",
+    "./js-constant": "./libs/js-constant.js",
+    "./js-utils": "./libs/js-utils.js",
+    "./js-dom-utils": "./libs/js-dom-utils.js",
+    "./js-dataset-helper": "./libs/js-dataset-helper.js",
+    "./js-config": "./libs/js-config.js",
+    "./js-cache": "./libs/js-cache.js",
+    "./js-plugin": "./libs/js-plugin.js",
+    "./js-property-factory": "./libs/js-property-factory.js",
+    "./js-dom-helper": "./libs/js-dom-helper.js"
   },
   "scripts": {
-    "build": "esbuild ./src/ajax-form-submit.js --outfile=./dist/ajax-form-submit.min.js --bundle --minify --sourcemap"
+    "build": "node build.js"
   },
   "repository": {
     "type": "git",
