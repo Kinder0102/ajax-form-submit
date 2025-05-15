@@ -11,8 +11,8 @@ export default class MiddlewareFactory {
     this.#debug = isTrue(opts.debug)
     this.#middlewares = {
       debug: (...args) => console.log(...args),
-      alert: ({ text, title }) => alert(text),
-      confirm: ({ text, title }) => (confirm(text) ? Promise.resolve() : Promise.reject(new Error(ERROR_CONFIRM))),
+      alert: input => alert(input.text),
+      confirm: input => (confirm(input.text) ? Promise.resolve() : Promise.reject(new Error(ERROR_CONFIRM))),
       prompt: input => {
         const { text, name } = input
         const result = prompt(text)
