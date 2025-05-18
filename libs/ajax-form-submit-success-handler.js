@@ -8,6 +8,7 @@ import {
   isFunction,
   isString,
   isNotBlank,
+  isElement,
   hasValue,
   toArray,
   objectKeys,
@@ -17,14 +18,7 @@ import {
   addBasePath
 } from './js-utils.js'
 
-import {
-  isElement,
-  triggerEvent,
-  showElements,
-  hideElements,
-  getTargets
-} from './js-dom-utils.js'
-
+import { triggerEvent, showElements, hideElements, getTargets } from './js-dom-utils.js'
 import { createProperty } from './js-property-factory.js'
 
 const CLASS_NAME = 'ajax-form-submit-success'

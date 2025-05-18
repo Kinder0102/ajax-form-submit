@@ -55,6 +55,10 @@ export function isObject(obj) {
   return hasValue(obj) && typeof obj === 'object' && !isFunction(obj) && !isArray(obj)
 }
 
+export function isElement(el) {
+  return el instanceof Element || el instanceof DocumentFragment
+}
+
 export function isURL(str) {
   return !!new RegExp(URL_PATTERN).test(str)
 }
@@ -64,7 +68,7 @@ export function toArray(value, mapFn, thisArg) {
     return []
   } else if (isArray(value)) {
     return value.filter(hasValue)
-  } else if (!isString(value) && isFunction(value[Symbol.iterator])) {
+  } else if (!isString(value) && !(isElement(value)) && isFunction(value[Symbol.iterator])) {
     return Array.from(value, mapFn, thisArg).filter(hasValue)
   } else {
     return [ value ]

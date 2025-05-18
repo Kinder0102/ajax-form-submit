@@ -16,6 +16,7 @@ import {
   isNotBlank,
   isArray,
   isObject,
+  isElement,
   valueToString,
   stringToValue,
   split,
@@ -29,7 +30,6 @@ import {
 } from './js-utils.js'
 
 import {
-  isElement,
   elementIs,
   hasClass,
   addClass,

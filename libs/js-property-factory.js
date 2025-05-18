@@ -5,6 +5,7 @@ import {
   isObject,
   isBoolean,
   isTrue,
+  isElement,
   hasValue,
   toArray,
   objectKeys,
@@ -13,7 +14,7 @@ import {
   findObjectValue
 } from './js-utils.js'
 
-import { isElement, querySelector } from './js-dom-utils.js'
+import { querySelector } from './js-dom-utils.js'
 import { createCache } from './js-cache.js'
 
 const PROPERTY_CACHE = createCache()

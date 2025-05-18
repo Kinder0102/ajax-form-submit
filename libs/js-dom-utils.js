@@ -13,15 +13,12 @@ import {
   isArray,
   isNotBlank,
   isFunction,
+  isElement,
   toArray,
   objectValues,
   split,
   startsWith
 } from './js-utils.js'
-
-export function isElement(el) {
-  return el instanceof Element || el instanceof DocumentFragment
-}
 
 export function elementIs(el, type) {
   if (!isElement(el))

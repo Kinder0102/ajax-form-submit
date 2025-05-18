@@ -15,7 +15,9 @@ import {
   isInteger,
   isNotBlank,
   isObject,
+  isElement,
   startsWith,
+  endsWith,
   delay,
   valueToString,
   toCamelCase,
@@ -26,7 +28,6 @@ import {
 } from '#libs/js-utils'
 
 import {
-  isElement,
   elementIs,
   hasClass,
   addClass,
@@ -150,6 +151,7 @@ export default class AjaxFormSubmit {
 
   constructor(root, opt = {}) {
     this.#root = elementIs(root, 'form') ? root : document.createElement('form')
+    this.#root.noValidate = true
     this.#config = createConfig(opt.config || {}, AjaxFormSubmit.config, DEFAULT_CONFIG)
     this.#parameters = { append: { _append: true } }
 
@@ -231,7 +233,7 @@ export default class AjaxFormSubmit {
     let result = {}
     for (const [key, { name }] of objectEntries(UI_CONTROLS)) {
       result[key] = [
-        ...querySelector(this.#getParameters(toKebabCase(key))),
+        ...querySelector(this.#getParameters(key)),
         ...querySelector(`.${name}`, this.#root)
       ]
     }
@@ -242,11 +244,11 @@ export default class AjaxFormSubmit {
 
   #initTriggers(triggers = []) {
     assert(isArray(triggers), 1, ARRAY)
-    const props = createProperty(this.#datasetHelper.getValue(this.#root, 'trigger'))[0]
+    const props = createProperty(this.#getParameters('trigger'))[0]
     const attrName = this.#datasetHelper.keyToAttrName('trigger')
     const result = [
       ...querySelector(triggers),
-      ...querySelector(props.value),
+      ...querySelector(props?.value),
       ...querySelector(`button[type="submit"], button:not([type]), [${attrName}]`, this.#root)
     ]
 
@@ -327,37 +329,36 @@ export default class AjaxFormSubmit {
   #handleValidation(request, opt) {
     const middlewareProps = this.#getParameters('middleware-validation', opt)
     const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
+
     const fields = new Set()
+    const attrName = this.#datasetHelper.keyToAttrName('validation')
+    const groups = this.#queryFormInput(`[${attrName}][required]`).reduce((acc, input) => {
+      input.setCustomValidity('')
+      const group = input.getAttribute(attrName)
+      acc[group] ||= []
+      acc[group].push(input)
+      return acc
+    }, {})
 
-    !checkFormValidation(this.#root) && fields.add('form')
-    checkHiddenInputValidation(this.#root, request).forEach(fields.add, fields)
-
-    const attrKey = 'required-group'
-    const attrName = this.#datasetHelper.keyToAttrName(attrKey)
-    let requiredGroups = {}
-    findFormElem(this.#root, `[${attrName}]`).forEach(elem => {
-      const groupName = this.#datasetHelper.getValue(elem, attrKey)
-      requiredGroups[groupName] ||= []
-      requiredGroups[groupName].push(elem)
-    })
-
-    for (const [name, group] of objectEntries(requiredGroups)) {
-      const groupValid = group.some(elem => {
-        const elemName = elem.getAttribute('name')
-        let isValid = hasValue(request[elemName]) || isNotBlank(elem.value)
-        isValid ||= findFormElem(this.#root, `[name="${elemName}"]`)
-          .some(input => isNotBlank(input.value))
-        return isValid
-      })
-      if (!groupValid)
-        fields.add(name)
+    for (const [group, inputs] of objectEntries(groups)) {
+      if (inputs.some(input => isNotBlank(input.value))) {
+        inputs.forEach(input => !isNotBlank(input.value) && (input.disabled = true))
+      } else {
+        inputs[0]?.setCustomValidity(AjaxFormSubmit.config.i18n?.validation?.[group] || group)
+      }
     }
 
+    this.#queryFormInput().forEach(el => {
+      !el.validity.valid && fields.add(el.name)
+      el.disabled = false
+    })
+    
     //TODO middleware validation
-    return middleware({ request, root: this.#root}).then(result => {
+    return middleware({ request, root: this.#root }).then(result => {
       toArray(result).filter(isNotBlank).forEach(fields.add, fields)
 
       if (fields.size > 0) {
+        this.#root.reportValidity()
         this.#plugins.broadcast(EVENT_LIFECYCLE_INVALID)
         showElements(this.#controls.messageValidation)
         throw new Error(ERROR_VALIDATION)
@@ -377,11 +378,10 @@ export default class AjaxFormSubmit {
       url: this.#getParameters('action', opt, opt.url)[0],
       enctype: this.#getParameters('enctype', opt)[0],
       csrf: this.#config.get('getCsrfToken')['getCsrfToken']?.(),
-      headers: findFormElem(this.#root, `[${inAttr}="header"]`)
-        .reduce((acc, { name, value }) => {
-          acc[name] = value
-          return acc
-        }, {})
+      headers: this.#queryFormInput(`[${inAttr}="header"]`).reduce((acc, { name, value }) => {
+        acc[name] = value
+        return acc
+      }, {})
     }
 
     enableElements(this.#controls.enable)
@@ -492,12 +492,12 @@ export default class AjaxFormSubmit {
           const allAttr = `[${attrName}="${key}"]`
           const typeAttr = `[${attrName}-${type}="${key}"]`
 
-          findFormElem(this.#root, `${allAttr},${typeAttr}`)
+          this.#queryFormInput(`${allAttr},${typeAttr}`)
             .forEach(({ name }) => this.#parameters.apply[name] = values)
         }
 
       } else if (hasValue(applyData)) {
-        findFormElem(this.#root, `[${attrName}="${FORM_APPLY_CLASS_NAME}-${type}"]`)
+        this.#queryFormInput(`[${attrName}="${FORM_APPLY_CLASS_NAME}-${type}"]`)
           .forEach(({ name }) => this.#parameters.apply[name] = valueToString(applyData))
       }
     }
@@ -522,7 +522,7 @@ export default class AjaxFormSubmit {
   #handleEventReset(event) {
     this.#plugins.broadcast(EVENT_RESET)
     this.#resetUIControls()
-    this.#resetHandler.run(createProperty(this.#datasetHelper.getValue(this.#root, 'reset'))[0])
+    this.#resetHandler.run(createProperty(this.#getParameters('reset'))[0])
   }
 
   #getParameters(key, opt, defaultValue) {
@@ -534,11 +534,6 @@ export default class AjaxFormSubmit {
     if (isObject(opt) && hasValue(opt[camelKey] ?? opt[kebabKey]))
       return toArray(opt[camelKey] ?? opt[kebabKey])
 
-    const selector = `[name="_${this.#datasetHelper.keyToInputName(kebabKey)}"], [name="_${kebabKey}"]`
-    const inputValue = findFormElem(this.#root, selector).map(elem => elem.value).filter(hasValue)
-    if (inputValue.length > 0)
-      return inputValue
-
     const dataAttrValue = this.#datasetHelper.getValue(this.#root, kebabKey)
     if (isNotBlank(dataAttrValue))
       return toArray(dataAttrValue)
@@ -547,9 +542,13 @@ export default class AjaxFormSubmit {
     if (isNotBlank(attrValue))
       return toArray(attrValue)
 
+    const selector = `[name="_${this.#datasetHelper.keyToInputName(kebabKey)}"], [name="_${kebabKey}"]`
+    const inputValue = this.#queryFormInput(selector, false).map(elem => elem.value).filter(hasValue)
+    if (inputValue.length > 0)
+      return inputValue
+
     return toArray(defaultValue)
   }
-
 
   #generateDataAndProps(opt = {}) {
     if (isObject(opt.data))
@@ -558,34 +557,41 @@ export default class AjaxFormSubmit {
     const attrBlacklist = [
       this.#datasetHelper.keyToAttrName('in')
     ]
-    let result = {}
 
-    for (const name in this.#root.elements) {
-      const el = this.#root.elements[name]
-      if (!isInteger(name))
-        setNestedValue(result, name, getElementValue(el, name, attrBlacklist))
-    }
+    let elements = { data: {}, prop: {} }
+    let result = { data: {}, prop: {} }
+    const inputs = this.#queryFormInput()
 
-    querySelector(this.#datasetHelper.getValue(this.#root, 'input')).forEach(elem => {
-      if (isNotBlank(elem.name))
-        setNestedValue(result, elem.name, getElementValue(elem, elem.name, attrBlacklist))
-    })
-
+    // TODO parameter and input conflict
     PARAMETER.forEach(({ name, required }) => {
       if (required || opt.parameter?.includes(name))
-        objectEntries(this.#parameters[name]).forEach(([key, value]) => result[key] = value)
+        objectEntries(this.#parameters[name]).forEach(([key, value]) => inputs.push({ name: key, value}))
     })
 
-    const props = objectKeys(result).reduce((acc, key) => {
-      const { exist, value } = startsWith(key, '_')
-      if (exist) {
-        acc[value] = result[key]
-        delete result[key]
-      }
-      return acc
-    }, {})
+    inputs.forEach(el => {
+      const { exist: isProp, value: propName } = startsWith(el.name, '_')
+      const { exist: multiple, value: realName } = endsWith(propName, '[]')
+      const target = isProp ? elements.prop : elements.data
+      const current = target[realName]
 
-    return { data: deepFilterArrays(result), props }
+      if (hasValue(current) || multiple) {
+        target[realName] = toArray(current)
+        target[realName].push(el)
+      } else {
+        target[realName] = el
+      }
+    })
+
+    for (const [type, group] of objectEntries(elements)) {
+      for (const [name, el] of objectEntries(group)) {
+        setNestedValue(result[type], name, getElementValue(el, attrBlacklist))
+      }
+    }
+
+    return {
+      data: deepFilterArrays(result.data),
+      props: deepFilterArrays(result.prop)
+    }
   }
 
   #resetUIControls() {
@@ -597,43 +603,22 @@ export default class AjaxFormSubmit {
         control?.enable ? disableElements(elements) : enableElements(elements)
     }
   }
-}
 
-function findFormElem(form, selector) {
-  assert(isNotBlank(selector), 1, STRING_NON_BLANK)
-  const result = []
-  for (const el of form.elements)
-    el.matches(selector) && result.push(el)
-  return result
-}
-
-function checkFormValidation(form) {
-  let isValid = true
-  if (form.checkValidity) {
-    if (form.hasAttribute('novalidate')) {
-      if (hasClass(form, 'needs-validation')) {
-        addClass(form, 'was-validated')
-        isValid = form.checkValidity()
+  #queryFormInput(selector, withExternal = true) {
+    const elements = [ ...this.#root.elements ]
+    if (withExternal)
+      elements.push(...querySelector(this.#getParameters('input')))
+    return elements.reduce((acc, el) => {
+      if (isNotBlank(el.name)) {
+        if (isNotBlank(selector)) {
+          el.matches(selector) && acc.push(el)
+        } else {
+          acc.push(el)
+        }
       }
-    } else {
-      isValid = form.checkValidity()
-    }
+      return acc
+    }, [])
   }
-  return isValid
-}
-
-function checkHiddenInputValidation(form, input) {
-  const fields = []
-  const selector = 'input[type=hidden][required]'
-  findFormElem(form, selector).forEach(elem => {
-    const elemName = elem.getAttribute('name')
-    if (isNotBlank(elemName)) {
-      const elemValue = elem.value || input[elemName]
-      if (!hasValue(elemValue))
-        fields.add(elemName)
-    }
-  })
-  return fields
 }
 
 function setNestedValue(obj, name, value) {
@@ -667,21 +652,17 @@ function setNestedValue(obj, name, value) {
   }, obj)
 }
 
-function getElementValue(el, name, attrBlacklist = [], multiple) {
-  if (el instanceof RadioNodeList) {
-    if (elementIs(el[0], HTML_RADIO)) {
-      return el.value
-    } else {
-      const result = toArray(el)
-        .map(elem => getElementValue(elem, name, attrBlacklist, true))
-        .flat()
-        .filter(hasValue)
-      return result.length > 1 ? result : (name.includes('[]') ? result : result[0])
-    }
-  } else if (isElement(el)) {
-    if (el.disabled || el.name != name)
-      return
-    if (attrBlacklist.some(attr => el.hasAttribute(attr)))
+function getElementValue(el, attrBlacklist = [], multiple) {
+  if (isArray(el)) {
+    const result = toArray(el)
+      .map(elem => getElementValue(elem, attrBlacklist, true))
+      .flat()
+      .filter(hasValue)
+    return el[0]?.type == HTML_RADIO ? result[0] : result
+  } else if (!isElement(el)) {
+    return el.value
+  } else {
+    if (el.disabled || attrBlacklist.some(attr => el.hasAttribute(attr)))
       return
     const { type, value, checked, files } = el
     switch(type) {

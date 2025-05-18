@@ -11,12 +11,12 @@ import {
   isNotBlank,
   isObject,
   isFunction,
+  isElement,
   throttle
 } from '#libs/js-utils'
 
 import {
   querySelector,
-  isElement,
   elementIs,
   hasClass,
   addClass,
