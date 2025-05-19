@@ -42,8 +42,8 @@ import {
 } from '#libs/js-dom-utils'
 
 import { default as SubmitHandler } from '#libs/ajax-form-submit-submit-handler'
-import { default as ResetHandler } from '#libs/ajax-form-submit-reset-handler'
 import { default as SuccessHandler, handleEvent } from '#libs/ajax-form-submit-success-handler'
+import { default as ResetHandler } from '#libs/ajax-form-submit-reset-handler'
 import { createProperty } from '#libs/js-property-factory'
 import { createDatasetHelper } from '#libs/js-dataset-helper'
 import { createInstanceMap } from '#libs/js-cache'
@@ -127,6 +127,10 @@ SuccessHandler.add('reset', handleEvent(EVENT_RESET))
 
 export default class AjaxFormSubmit {
   static config = {}
+  static submitHandler = SubmitHandler
+  static successHandler = SuccessHandler
+  static resetHandler = ResetHandler
+  static domHelper = DOMHelper
   static middleware = new MiddlewareFactory()
   static instance = createInstanceMap(
     el => elementIs(el, 'form') && hasClass(el, FORM_CLASS_NAME) && !hasClass(el, FORM_INIT_CLASS_NAME),
