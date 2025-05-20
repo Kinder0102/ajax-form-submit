@@ -1,13 +1,4 @@
-import {
-  OBJECT,
-  FUNCTION,
-  ARRAY,
-  STRING_NON_BLANK,
-  HTML_ELEMENT,
-  HTML_INPUT,
-  HTML_SELECT,
-  HTML_CHECKBOX
-} from './js-constant.js'
+import { HTML_ELEMENT, HTML_INPUT, HTML_SELECT, HTML_CHECKBOX } from './js-constant.js'
 
 import {
   assert,
@@ -31,11 +22,8 @@ import {
 
 import {
   elementIs,
-  hasClass,
   addClass,
-  removeClass,
   querySelector,
-  registerEvent,
   showElements,
   hideElements
 } from './js-dom-utils.js'
@@ -87,10 +75,10 @@ export default class DOMHelper {
   #basePath
   #datasetHelper
 
-  constructor(opt = {}) {
-    this.#prefix = opt.prefix
-    this.#basePath = opt.basePath || BASE_PATH
-    this.#datasetHelper = createDatasetHelper(opt.prefix)
+  constructor(opts = {}) {
+    this.#prefix = opts.prefix
+    this.#basePath = opts.basePath || BASE_PATH
+    this.#datasetHelper = createDatasetHelper(opts.prefix)
   }
 
   setValueToElement(el, value, opts = {}) {

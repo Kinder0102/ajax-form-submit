@@ -1,3 +1,4 @@
+import { FUNCTION } from './js-constant.js'
 import {
   isURL,
   isNotBlank,
@@ -26,7 +27,7 @@ export const createProperty = props => {
     if (isObject(prop)) {
       return prop
     } else if (isFunction(prop)) {
-      return { type: ['function'], value: [prop] }
+      return { type: [FUNCTION], value: [prop] }
     } else {
       if (!PROPERTY_CACHE.has(prop)) {
         let result = { type: [], value: [] }

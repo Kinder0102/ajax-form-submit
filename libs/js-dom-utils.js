@@ -4,7 +4,7 @@ import {
   STRING_NON_BLANK,
   FUNCTION,
   DOCUMENT,
-  HTML_ELEMENT
+  HTML_ELEMENT,
 } from './js-constant.js'
 
 import {
@@ -23,16 +23,9 @@ import {
 export function elementIs(el, type) {
   if (!isElement(el))
     return false
-  
-  const elemType = el.tagName?.toLowerCase()
-  if (isNotBlank(type)) {
-    return type === elemType
-  } else if (isArray(type)) {
-    return type.includes(elemType)
-  } else {
-    assert(false, 2, [ARRAY, STRING_NON_BLANK])
-  }
-  return false
+
+  const types = toArray(type)
+  return types.includes(el.tagName.toLowerCase()) || types.includes(el.type)
 }
 
 export function hasClass(el, classname) {

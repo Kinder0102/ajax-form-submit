@@ -29,15 +29,15 @@ export default class AjaxFormSubmitSubmitHandler {
   #payload
   #createResponse
 
-  constructor(opt = {}) {
-    this.#payload = opt
-    this.#createResponse = opt.createResponse
+  constructor(opts = {}) {
+    this.#payload = opts
+    this.#createResponse = opts.createResponse
   }
 
-  run(type, opt, input, requestParams) {
+  run(type, opts, input, requestParams) {
     const handler = HANDLERS[type]
     assert(isFunction(handler?.callback), `Could not find submitHandler "${type}"`)
-    const result = handler.callback({ ...this.#payload, ...opt }, input, requestParams)
+    const result = handler.callback({ ...this.#payload, ...opts }, input, requestParams)
     if (isPromise(result)) {
       return result
     } else {
@@ -46,18 +46,11 @@ export default class AjaxFormSubmitSubmitHandler {
   }
 }
 
-function handleBypass(opt, input) {
-  let data
-  if (isNotBlank(input.globalValue)) {
-    const value = window[input.globalValue]
-    data = toArray(value)
-  } else {
-    data = [input]
-  }
-  return { data }
+function handleBypass(opts, input) {
+  return 'data' in input ? input : { data: [input]}
 }
 
-function handleMock(opt, input) {
+function handleMock(opts, input) {
   const size = input.size || 10
   const number = input.page || 0
   const totalElements = 500
@@ -69,7 +62,7 @@ function handleMock(opt, input) {
 }
 
 //TODO 
-function handleLocalStorage(opt, input, requestParams) {
+function handleLocalStorage(opts, input, requestParams) {
   let result = {}
   const { method } = requestParams
   const {

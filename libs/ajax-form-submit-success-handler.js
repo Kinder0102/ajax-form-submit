@@ -2,6 +2,7 @@ import { OBJECT, FUNCTION, STRING_NON_BLANK } from './js-constant.js'
 import {
   assert,
   formatUrl,
+  hasValue,
   isTrue,
   isArray,
   isObject,
@@ -9,20 +10,19 @@ import {
   isString,
   isNotBlank,
   isElement,
-  hasValue,
   toArray,
+  startsWith,
   objectKeys,
-  objectEntries,
   valueToString,
   findObjectValue,
   addBasePath
 } from './js-utils.js'
 
 import { triggerEvent, showElements, hideElements, getTargets } from './js-dom-utils.js'
+import { createDatasetHelper } from '#libs/js-dataset-helper'
 import { createProperty } from './js-property-factory.js'
 
-const CLASS_NAME = 'ajax-form-submit-success'
-const SKELETON_CLASS_NAME = `${CLASS_NAME}-skeleton`
+const ATTR_KEY = 'success'
 const HANDLERS = {}
 const LIFECYCLES = [
   { name: 'before' },
@@ -45,65 +45,40 @@ export default class AjaxFormSubmitSuccessHandler {
 
   static add = addHandler
 
-  #root
-  #datasetHelper
-  #defaultHandlerProps
-  #attrKey
-  #attrInputName
-  #attrRegex
   #payload
-  #handlerProps
-
-  constructor(opt = {}) {
-    const { handlerProps, attrKey, ...payload } = opt
-    this.#root = payload.root
-    this.#datasetHelper = payload.datasetHelper
-    this.#defaultHandlerProps = handlerProps
-    this.#attrKey = attrKey
-    this.#attrInputName = this.#datasetHelper.keyToInputName(attrKey)
-    this.#attrRegex = new RegExp(String.raw`_?${this.#attrInputName}-`, 'g')
-    this.#payload = payload
-    this.#registerLifecycleMethod() 
-  }
-
-  #registerLifecycleMethod() {
+  #defaultProps
+  
+  constructor(opts = {}) {
+    const { handlerProps, ...rest } = opts
+    const datasetHelper = createDatasetHelper(opts.prefix)
+    this.#payload = { datasetHelper, ...rest }
+    this.#defaultProps = handlerProps || {}
+    datasetHelper.getKeys(opts.root, ATTR_KEY).forEach(({ key, name }) => {
+      const props = datasetHelper.getValue(opts.root, key)
+      const current = this.#defaultProps[name]
+      this.#defaultProps[name] = hasValue(current) ? [...toArray(current), props] : props
+    })
+    
     for (const lifecycle of LIFECYCLES) {
-      this[lifecycle.name] = (opts, input, output, type) => this.#run(lifecycle, opts, input, output, type)
+      this[lifecycle.name] = (opts, input, output) => this.#run(lifecycle, opts, input, output)
     }
   }
 
-  #run(lifecycle, opts, input, output, type) {
-    this.#updateHandlerProps(opts)
-    const types = objectKeys(this.#handlerProps)
-    if (isNotBlank(type) && !types.includes(type))
-      return
+  #run(lifecycle, opts, input, output) {
+    const types = new Set(objectKeys(this.#defaultProps))
+    objectKeys(opts.property || {}).forEach(type => {
+      const { exist, value } = startsWith(type, `${ATTR_KEY}-`)
+      exist && types.add(value)
+    })
 
-    const selectTypes = type ? [ type ] : types
-    for (const selectType of selectTypes) {
-      const handler = HANDLERS[selectType]?.[lifecycle.name]
-      lifecycle.required && assert(isFunction(handler), `Could not find "${selectType}" in successHandlers`)
-      this.#handlerProps[selectType]
-        .forEach(prop => handler?.(input, output, prop, { ...this.#payload, ...opts }))
-    }
-  }
+    for (const type of types) {
+      const handler = HANDLERS[type]?.[lifecycle.name]
+      lifecycle.required && assert(isFunction(handler), `Could not find "${type}" in successHandler`)
 
-  #updateHandlerProps(handlerProps) {
-    this.#handlerProps = {}
-    for (const [key, value] of objectEntries(this.#defaultHandlerProps)) {
-      this.#handlerProps[key] = createProperty(value)
-    }
-
-    for (const [key, value] of objectEntries(handlerProps)) {
-      if (key.includes(this.#attrInputName))
-        this.#handlerProps[key.replace(this.#attrRegex, '')] = createProperty(value)
-    }
-
-    if (isElement(this.#root)) {
-      this.#datasetHelper.getKeys(this.#root, this.#attrKey).forEach(({ key, name }) => {
-        const props = createProperty(this.#datasetHelper.getValue(this.#root, key))
-        this.#handlerProps[name] ||= []
-        this.#handlerProps[name] = this.#handlerProps[name].concat(props)
-      })
+      const payloadProps = opts.property?.[`${ATTR_KEY}-${type}`]
+      const defaultProps = this.#defaultProps[type]
+      createProperty([defaultProps, payloadProps].flat())
+        .forEach(props => handler?.(input, output, props, { ...this.#payload, ...opts }))
     }
   }
 }
@@ -173,14 +148,14 @@ function handleRedirect(input, output, { target, type, param }, { basePath }) {
 function handleDisplay() {
   const group = 'skeleton'
   return {
-    before: (input, output, { target }, { append, domHelper, datasetHelper }) => {
+    before: (input, output, { target }, { parameter, domHelper, datasetHelper }) => {
       getTargets(target).forEach(elem => {
         const props = createProperty(datasetHelper.getValue(elem, 'template'))[0]
-        !isTrue(append) && !isTrue(props.append?.[0]) && domHelper?.clearElement?.(elem)
+        !parameter?.includes('append') && !isTrue(props.append?.[0]) && domHelper?.clearElement?.(elem)
       })
     },
     request: (input, output, { target }, { domHelper, datasetHelper }) => {
-      const mock = toArray({ length: input.size || 1 }, () => ({}))
+      const mock = toArray({ length: input?.size || 1 }, () => ({}))
       getTargets(target).forEach(elem => {
         const { skeleton: [template] = [] } = createProperty(datasetHelper.getValue(elem, 'template'))[0]
         isNotBlank(template) && domHelper?.setValueToElement?.(elem, mock, { template, group })

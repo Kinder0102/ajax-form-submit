@@ -4,8 +4,8 @@ const WITH_DATA_METHOD = [ 'POST', 'PUT', 'PATCH' ]
 
 export default { request }
 
-function request(opt, input, requestParams) {
-  const { basePath, handleProgress, createResponse } = opt
+function request(opts, input, requestParams) {
+  const { basePath, handleProgress, createResponse } = opts
   const { formData, hasFile } = objectToFormData(input)
   const { method = 'POST', url, csrf, headers = {}, enctype = '' } = requestParams
   const isWithDataMethod = WITH_DATA_METHOD.includes(method.toUpperCase())

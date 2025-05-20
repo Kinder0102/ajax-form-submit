@@ -194,11 +194,11 @@ export function formatNumber(value, n, x) {
 }
 
 export function formatString(str, args) {
+  const param = toArray(args)
   if (isNotBlank(str)) {
-    const param = toArray(args)
     return str.replace(/{(\d+)}/g, (match, number) => hasValue(param[number]) ? param[number] : '')
   } else {
-    return args.join?.() || args
+    return param.join()
   }
 }
 

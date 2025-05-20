@@ -39,7 +39,7 @@ function addHandler(cacheBefore = {}, cacheAfter = {}) {
   }
 }
 
-function clear(el, opt) {
+function clear(el, opts) {
   querySelector('[name]', el).forEach(field => {
     const { type, tagName, disabled } = field
     const tag = tagName.toLowerCase()
@@ -60,6 +60,6 @@ function clear(el, opt) {
   })
 }
 
-function submit(el, opt) {
+function submit(el, opts) {
   triggerEvent(el, 'submit')
 }

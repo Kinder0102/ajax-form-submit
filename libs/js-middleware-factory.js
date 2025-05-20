@@ -41,7 +41,7 @@ export default class MiddlewareFactory {
       if (!isNotBlank(selectType))
         continue
       const skip = wrapSkip(skipProps)
-      const callback = this.#middlewares[selectType]
+      const callback = selectType === FUNCTION ? value[0] : this.#middlewares[selectType]
       assert(isFunction(callback), `Could not find "${selectType}" in middlewares`)
       result.push({ callback, skip, params })
     }

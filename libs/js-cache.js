@@ -4,15 +4,9 @@ import { assert, isFunction, isElement } from './js-utils.js'
 export function createCache() {
   const cache = new Map()
   return {
-    has: key => {
-      return cache.has(key)
-    },
-    get: key => {
-      return cache.get(key)
-    },
-    set: (key, value) => {
-      isFunction(value) ? cache.set(key, value(cache.get(key))) : cache.set(key, value)
-    },
+    has: key => cache.has(key),
+    get: key => cache.get(key),
+    set: (key, value) => isFunction(value) ? cache.set(key, value(cache.get(key))) : cache.set(key, value),
   }
 }
 

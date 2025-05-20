@@ -20,6 +20,7 @@ import {
   endsWith,
   delay,
   valueToString,
+  formatString,
   toCamelCase,
   toKebabCase,
   toArray,
@@ -103,6 +104,12 @@ const DEFAULT_CONFIG = {
     page: 'page',
     size: 'size',
   },
+  request: {
+    from: {
+      global: key => window[key] ?? key,
+      localStorage: key => localStorage.getItem(key) ?? key
+    }
+  },
   response: {
     create: value => ({ code: 200, data: { item: value?.data, page: value?.page } }),
     checkResponse: res => res?.code === 200,
@@ -145,15 +152,16 @@ export default class AjaxFormSubmit {
   #controls
   #triggers
   #plugins
+  #middlewares
   #submitHandler
-  #resetHandler
   #successHandler
+  #resetHandler
 
-  constructor(root, opt = {}) {
+  constructor(root, opts = {}) {
     this.#root = elementIs(root, 'form') ? root : document.createElement('form')
     this.#root.noValidate = true
-    this.#config = createConfig(opt.config || {}, AjaxFormSubmit.config, DEFAULT_CONFIG)
-    this.#parameters = { append: { _append: true } }
+    this.#config = createConfig(opts.config || {}, AjaxFormSubmit.config, DEFAULT_CONFIG)
+    this.#parameters = {}
 
     const { prefix } = this.#config.get('prefix')
     this.#datasetHelper = createDatasetHelper(prefix)
@@ -161,15 +169,16 @@ export default class AjaxFormSubmit {
 
     const { basePath } = this.#config.get('basePath')
     this.#domHelper = new DOMHelper({ prefix, basePath })
-    this.#controls = this.#initUIControls(opt.control)
-    this.#triggers = this.#initTriggers(opt.trigger)
-    this.#plugins = this.#initPlugins(opt.plugin)
+    this.#controls = this.#initUIControls(opts.control)
+    this.#triggers = this.#initTriggers(opts.trigger)
+    this.#plugins = this.#initPlugins(opts.plugin)
+    this.#middlewares = opts.middleware
     this.#submitHandler = this.#initSubmitHandler()
+    this.#successHandler = this.#initSuccessHandler(opts.success)
     this.#resetHandler = new ResetHandler(this.#root)
-    this.#successHandler = this.#initSuccessHandler(opt.success)
+    this.#resetHandler.add('empty', this.#successHandler.before)
     this.#initAutoSubmit()
 
-    this.#resetHandler.add('empty', this.#successHandler.before)
     registerEvent(this.#root, EVENT_SUBMIT, event => {
       stopDefaultEvent(event)
       this.submitSync()
@@ -181,10 +190,8 @@ export default class AjaxFormSubmit {
     addClass(this.#root, FORM_INIT_CLASS_NAME)
   }
 
-  submit(opt = {}) {
-    const { data, props } = this.#generateDataAndProps(opt)
-    const options = { ...opt, props }
-
+  submit(opts = {}) {
+    const { data, ...options } = { ...opts, ...this.#generateDataAndProps(opts.parameter)}
     return this.#handleBefore(data, options)
       .then(request => this.#handleValidation(request, options))
       .then(request => this.#handleRequest(request, options))
@@ -204,8 +211,8 @@ export default class AjaxFormSubmit {
       })
   }
 
-  submitSync(opt) {
-    this.submit(opt).catch(_ => {})
+  submitSync(opts) {
+    this.submit(opts).catch(_ => {})
   }
 
   #readFormConfig() {
@@ -280,10 +287,9 @@ export default class AjaxFormSubmit {
   #initSuccessHandler(handlerProps) {
     return new SuccessHandler({
       root: this.#root,
-      attrKey: 'success',
       domHelper: this.#domHelper,
-      datasetHelper: this.#datasetHelper,
-      handlerProps, ...this.#config.get(['prefix', 'basePath']),
+      handlerProps,
+      ...this.#config.get(['prefix', 'basePath']),
     })
   }
 
@@ -311,25 +317,19 @@ export default class AjaxFormSubmit {
     formSubmitAuto.all.push(this)
   }
 
-  #handleBefore(request, opt) {
-    const middlewareProps = this.#getParameters('middleware-before', opt)
-    const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
-
+  #handleBefore(request, opts) {
     return this.#plugins.ready()
-      .then(() => middleware({ request, root: this.#root }))
+      .then(() => this.#getMiddleware('before', opts)({ request, root: this.#root }))
       .then(result => hasValue(result?.request) ? result.request : request)
       .then(result => {
         this.#plugins.broadcast(EVENT_LIFECYCLE_BEFORE, { request: result })
         this.#resetUIControls()
-        this.#successHandler.before(opt.props)
+        this.#successHandler.before(opts)
         return result
       })
   }
 
-  #handleValidation(request, opt) {
-    const middlewareProps = this.#getParameters('middleware-validation', opt)
-    const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
-
+  #handleValidation(request, opts) {
     const fields = new Set()
     const attrName = this.#datasetHelper.keyToAttrName('validation')
     const groups = this.#queryFormInput(`[${attrName}][required]`).reduce((acc, input) => {
@@ -354,7 +354,7 @@ export default class AjaxFormSubmit {
     })
     
     //TODO middleware validation
-    return middleware({ request, root: this.#root }).then(result => {
+    return this.#getMiddleware('validation', opts)({ request, root: this.#root }).then(result => {
       toArray(result).filter(isNotBlank).forEach(fields.add, fields)
 
       if (fields.size > 0) {
@@ -367,21 +367,14 @@ export default class AjaxFormSubmit {
     })
   }
 
-  #handleRequest(request, opt) {
-    const middlewareProps = this.#getParameters('middleware-request', opt)
-    const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
-    const type = this.#getParameters('type', opt)[0] || 'ajax'
-    // TODO need finetune
-    const inAttr = this.#datasetHelper.keyToAttrName('in')
+  #handleRequest(request, opts) {
+    const type = this.#getParameters('type', opts)[0] || 'ajax'
     const requestParams = {
-      method: this.#getParameters('method', opt)[0],
-      url: this.#getParameters('action', opt, opt.url)[0],
-      enctype: this.#getParameters('enctype', opt)[0],
+      method: this.#getParameters('method', opts)[0],
+      url: this.#getParameters('action', opts, opts.url)[0],
+      enctype: this.#getParameters('enctype', opts)[0],
       csrf: this.#config.get('getCsrfToken')['getCsrfToken']?.(),
-      headers: this.#queryFormInput(`[${inAttr}="header"]`).reduce((acc, { name, value }) => {
-        acc[name] = value
-        return acc
-      }, {})
+      headers: opts.header
     }
 
     enableElements(this.#controls.enable)
@@ -390,25 +383,20 @@ export default class AjaxFormSubmit {
     hideElements(this.#controls.hide)
 
     return delay(this.#config.get('delay').delay)
-      .then(() => middleware({ request, root: this.#root}))
+      .then(() => this.#getMiddleware('request', opts)({ request, root: this.#root}))
       .then(result => hasValue(result?.request) ? result.request : request)
       .then(result => {
         this.#plugins.broadcast(EVENT_LIFECYCLE_REQUEST, { request: result })
-        this.#successHandler.request(opt.props, result)
-        return this.#submitHandler.run(type, opt, result, requestParams)
+        this.#successHandler.request(opts, result)
+        return this.#submitHandler.run(type, opts, result, requestParams)
           .then(res => ({ request: result, response: res }))
       })
   }
 
-  #handleResponse(request, response, opt) {
-    const { checkResponse, getPage } = this.#config.get([
-      'response.checkResponse',
-      'response.getPage'
-    ])
-    const middlewareProps = this.#getParameters('middleware-response', opt)
-    const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
+  #handleResponse(request, response, opts) {
+    const { checkResponse } = this.#config.get('response.checkResponse')
 
-    return middleware({ request, response, root: this.#root})
+    return this.#getMiddleware('response', opts)({ request, response, root: this.#root})
     .then(result => hasValue(result?.response) ? result.response : response)
     .then(result => checkResponse(result) ? result : Promise.reject(result))
     .then(result => {
@@ -416,17 +404,15 @@ export default class AjaxFormSubmit {
       this.#plugins.broadcast(EVENT_LIFECYCLE_RESPONSE, payload)
       triggerEvent(this.#controls.progress, EVENT_UPLOAD_STOP)
       this.#resetUIControls()
-      this.#successHandler.response(opt.props, request, result)
+      this.#successHandler.response(opts, request, result)
       return payload
     })
   }
 
-  #handleAfter(request, response, opt) {
+  #handleAfter(request, response, opts) {
     const { getData, getPage } = this.#config.get(['response.getData', 'response.getPage'])
-    const middlewareProps = this.#getParameters('middleware-after', opt)
-    const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
 
-    return middleware({ request, response, root: this.#root}).then(_ => {
+    return this.#getMiddleware('after', opts)({ request, response, root: this.#root}).then(_ => {
       const data = getData(response)
       const page = getPage(response)
       this.#plugins.broadcast(EVENT_LIFECYCLE_AFTER, { request, response, page })
@@ -439,12 +425,12 @@ export default class AjaxFormSubmit {
       outputMessage.forEach(elem => this.#domHelper.setValueToElement(elem, data))
       pageMessage.forEach(elem => this.#domHelper.setValueToElement(elem, page))
       showElements(this.#controls.messageSuccess)
-      this.#successHandler.after(opt.props, request, data)
+      this.#successHandler.after(opts, request, data)
       return response
     })
   }
 
-  #handleError(error, opt) {
+  #handleError(error, opts) {
     console.error(error)
     const { getError } = this.#config.get(['response.getError'])
     this.#plugins.broadcast(EVENT_LIFECYCLE_AFTER, { error })
@@ -454,9 +440,7 @@ export default class AjaxFormSubmit {
     const updatedError = { ...error, message: getError(error) }
     const messageError = this.#controls.messageError
     if (isArray(messageError) && messageError.length > 0) {
-      const middlewareProps = this.#getParameters('middleware-error', opt)
-      const middleware = AjaxFormSubmit.middleware.create(middlewareProps)
-      middleware(updatedError).then(result => {
+      this.#getMiddleware('error', opts)(updatedError).then(result => {
         //TODO ignore default handler if middleware break
         messageError.forEach(elem => this.#domHelper.setValueToElement(elem, updatedError))
         showElements(messageError)
@@ -525,14 +509,17 @@ export default class AjaxFormSubmit {
     this.#resetHandler.run(createProperty(this.#getParameters('reset'))[0])
   }
 
-  #getParameters(key, opt, defaultValue) {
+  #getParameters(key, opts, defaultValue) {
     assert(isNotBlank(key), 1, STRING_NON_BLANK)
 
-    const camelKey = toCamelCase(key)
     const kebabKey = toKebabCase(key)
 
-    if (isObject(opt) && hasValue(opt[camelKey] ?? opt[kebabKey]))
-      return toArray(opt[camelKey] ?? opt[kebabKey])
+    if (isObject(opts)) {
+      const camelKey = toCamelCase(key)
+      const value = opts[camelKey] ?? opts[kebabKey] ?? opts.property?.[camelKey] ?? opts.property?.[kebabKey]
+      if (hasValue(value))
+        return toArray(value)
+    }
 
     const dataAttrValue = this.#datasetHelper.getValue(this.#root, kebabKey)
     if (isNotBlank(dataAttrValue))
@@ -542,56 +529,14 @@ export default class AjaxFormSubmit {
     if (isNotBlank(attrValue))
       return toArray(attrValue)
 
-    const selector = `[name="_${this.#datasetHelper.keyToInputName(kebabKey)}"], [name="_${kebabKey}"]`
-    const inputValue = this.#queryFormInput(selector, false).map(elem => elem.value).filter(hasValue)
-    if (inputValue.length > 0)
-      return inputValue
-
     return toArray(defaultValue)
   }
 
-  #generateDataAndProps(opt = {}) {
-    if (isObject(opt.data))
-      return { data: opt.data }
-
-    const attrBlacklist = [
-      this.#datasetHelper.keyToAttrName('in')
-    ]
-
-    let elements = { data: {}, prop: {} }
-    let result = { data: {}, prop: {} }
-    const inputs = this.#queryFormInput()
-
-    // TODO parameter and input conflict
-    PARAMETER.forEach(({ name, required }) => {
-      if (required || opt.parameter?.includes(name))
-        objectEntries(this.#parameters[name]).forEach(([key, value]) => inputs.push({ name: key, value}))
-    })
-
-    inputs.forEach(el => {
-      const { exist: isProp, value: propName } = startsWith(el.name, '_')
-      const { exist: multiple, value: realName } = endsWith(propName, '[]')
-      const target = isProp ? elements.prop : elements.data
-      const current = target[realName]
-
-      if (hasValue(current) || multiple) {
-        target[realName] = toArray(current)
-        target[realName].push(el)
-      } else {
-        target[realName] = el
-      }
-    })
-
-    for (const [type, group] of objectEntries(elements)) {
-      for (const [name, el] of objectEntries(group)) {
-        setNestedValue(result[type], name, getElementValue(el, attrBlacklist))
-      }
-    }
-
-    return {
-      data: deepFilterArrays(result.data),
-      props: deepFilterArrays(result.prop)
-    }
+  #getMiddleware(lifecycle, opts) {
+    const attrName = `middleware-${lifecycle}`
+    const middleware = opts.property?.[attrName] ?? this.#middlewares?.[lifecycle]
+    const props = this.#datasetHelper.getValue(this.#root, attrName, middleware)
+    return AjaxFormSubmit.middleware.create(props)
   }
 
   #resetUIControls() {
@@ -604,20 +549,91 @@ export default class AjaxFormSubmit {
     }
   }
 
-  #queryFormInput(selector, withExternal = true) {
-    const elements = [ ...this.#root.elements ]
-    if (withExternal)
-      elements.push(...querySelector(this.#getParameters('input')))
-    return elements.reduce((acc, el) => {
-      if (isNotBlank(el.name)) {
-        if (isNotBlank(selector)) {
-          el.matches(selector) && acc.push(el)
-        } else {
-          acc.push(el)
-        }
+  #queryFormInput(selector) {
+    return [
+      ...this.#root.elements,
+      ...querySelector(this.#getParameters('input'))
+          .filter(el => !el.disabled && isNotBlank(el.name))
+    ].reduce((acc, el) => {
+      if (isNotBlank(selector)) {
+        el.matches(selector) && acc.push(el)
+      } else {
+        acc.push(el)
       }
       return acc
     }, [])
+  }
+
+  #generateDataAndProps(parameter = []) {
+    const { from } = this.#config.get('request.from')
+    const groups = {}
+    for (const el of this.#queryFormInput()) {
+      const toProp = createProperty(this.#datasetHelper.getValue(el, 'to'))[0]
+      const toType = toProp.type[0] ?? toProp?.value[0] ?? 'data'
+      const { exist, value } = endsWith(el.name, '[]')
+      groups[toType] ||= {}
+      const target = groups[toType]
+      if (hasValue(target[value]) || exist) {
+        target[value] = toArray(target[value])
+        target[value].push(el)
+      } else {
+        target[value] = el
+      }
+    }
+
+    const result = {}
+    for (const [type, group] of objectEntries(groups)) {
+      result[type] ||= {}
+      for (const [name, el] of objectEntries(group)) {
+        let value
+        if (isArray(el)) {
+          value = toArray(el).map(elem => this.#getElementValue(elem, from, true)).flat().filter(hasValue)
+          value = elementIs(el[0], HTML_RADIO) ? value[0] : value
+        } else {
+          value = this.#getElementValue(el, from)
+        }
+        setNestedValue(result[type], name, value)
+      }
+    }
+
+    PARAMETER.forEach(({ name, required }) => {
+      if (required || parameter.includes(name))
+        objectEntries(this.#parameters[name])
+          .forEach(([key, value]) => result.data[key] = value)
+    })
+
+    return deepFilterArrays(result)
+  }
+
+  #getElementValue(el, getFrom, multiple) {
+    let result
+    const { type, value, checked, files } = el
+    switch(type) {
+      case 'date':
+      case 'datetime-local':
+        return isNotBlank(value) ? new Date(value).getTime() : ''
+      case 'file':
+        return el.multiple ? toArray(files) : files[0]
+      case 'select-multiple':
+        return toArray(el.selectedOptions).map(opts => opts.value)
+      case HTML_CHECKBOX:
+        result = multiple ? (checked ? value : undefined) : checked
+        break
+      case HTML_RADIO:
+        result = checked ? value : undefined
+        break
+      default:
+        result = el.value
+    }
+
+    if (result !== undefined) {
+      const {
+        type: [fromType],
+        value: [pattern]
+      } = createProperty(this.#datasetHelper.getValue(el, 'from'))[0]
+      const key = formatString(pattern, result)
+      return getFrom?.[fromType]?.(key) ?? key
+    }
   }
 }
 
@@ -650,37 +666,6 @@ function setNestedValue(obj, name, value) {
     }
     return acc[key]
   }, obj)
-}
-
-function getElementValue(el, attrBlacklist = [], multiple) {
-  if (isArray(el)) {
-    const result = toArray(el)
-      .map(elem => getElementValue(elem, attrBlacklist, true))
-      .flat()
-      .filter(hasValue)
-    return el[0]?.type == HTML_RADIO ? result[0] : result
-  } else if (!isElement(el)) {
-    return el.value
-  } else {
-    if (el.disabled || attrBlacklist.some(attr => el.hasAttribute(attr)))
-      return
-    const { type, value, checked, files } = el
-    switch(type) {
-      case HTML_CHECKBOX:
-        return multiple ? (checked ? value : null) : checked
-      case HTML_RADIO:
-        return checked ? value : null
-      case 'date':
-      case 'datetime-local':
-        return isNotBlank(value) ? new Date(value).getTime(): null
-      case 'file':
-        return el.multiple ? toArray(files) : files[0]
-      case 'select-multiple':
-        return toArray(el.selectedOptions).map(opt => opt.value)
-      default:
-        return value
-    }
-  }
 }
 
 function deepFilterArrays(obj) {
