@@ -1,4 +1,4 @@
-import { FUNCTION } from './js-constant.js'
+import { FUNCTION } from '#libs/js-constant'
 import {
   isURL,
   isNotBlank,
@@ -13,10 +13,10 @@ import {
   objectEntries,
   split,
   findObjectValue
-} from './js-utils.js'
+} from '#libs/js-utils'
 
-import { querySelector } from './js-dom-utils.js'
-import { createCache } from './js-cache.js'
+import { querySelector } from '#libs/js-dom-utils'
+import { createCache } from '#libs/js-cache'
 
 const PROPERTY_CACHE = createCache()
 const TEMPLATE_CACHE = createCache()

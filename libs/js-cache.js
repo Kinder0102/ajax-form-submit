@@ -1,5 +1,5 @@
-import { HTML_ELEMENT } from './js-constant.js'
-import { assert, isFunction, isElement } from './js-utils.js'
+import { HTML_ELEMENT } from '#libs/js-constant'
+import { assert, isFunction, isElement } from '#libs/js-utils'
 
 export function createCache() {
   const cache = new Map()

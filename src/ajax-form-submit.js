@@ -58,9 +58,6 @@ import MiddlewareFactory from '#libs/js-middleware-factory'
 const FORM_CLASS_NAME = 'ajax-form-submit'
 const FORM_INIT_CLASS_NAME = `${FORM_CLASS_NAME}-initialized`
 const FORM_APPLY_CLASS_NAME = `${FORM_CLASS_NAME}-apply`
-const FORM_MESSAGE_PAYLOAD_INPUT_CLASS_NAME = `${FORM_CLASS_NAME}-message-payload-input`
-const FORM_MESSAGE_PAYLOAD_OUTPUT_CLASS_NAME = `${FORM_CLASS_NAME}-message-payload-output`
-const FORM_MESSAGE_PAYLOAD_PAGE_CLASS_NAME = `${FORM_CLASS_NAME}-message-payload-page`
 
 const EVENT_SUBMIT = `submit`
 const EVENT_RESET = `reset`
@@ -122,8 +119,8 @@ const DEFAULT_CONFIG = {
     )
   },
   getCsrfToken: () => ({
-    header: document.querySelector('meta[name="_csrf_header"]')?.content || 'X-CSRF-TOKEN',
-    token: document.querySelector('meta[name="_csrf"]')?.content || ''
+    header: querySelector('meta[name="_csrf_header"]')[0]?.content || 'X-CSRF-TOKEN',
+    token: querySelector('meta[name="_csrf"]')[0]?.content || ''
   })
 }
 
@@ -172,10 +169,12 @@ export default class AjaxFormSubmit {
     this.#controls = this.#initUIControls(opts.control)
     this.#triggers = this.#initTriggers(opts.trigger)
     this.#plugins = this.#initPlugins(opts.plugin)
-    this.#middlewares = opts.middleware
+    this.#middlewares = opts.middleware || {}
     this.#submitHandler = this.#initSubmitHandler()
     this.#successHandler = this.#initSuccessHandler(opts.success)
     this.#resetHandler = new ResetHandler(this.#root)
+
+    // TODO could't found when successHandler property in opts
     this.#resetHandler.add('empty', this.#successHandler.before)
     this.#initAutoSubmit()
 
@@ -198,6 +197,7 @@ export default class AjaxFormSubmit {
       .then(({ request, response }) => this.#handleResponse(request, response, options))
       .then(({ request, response }) => this.#handleAfter(request, response, options))
       .catch(error => {
+        // TODO refactor handleError
         switch (error?.message) {
           case ERROR_VALIDATION:
             break
@@ -284,7 +284,8 @@ export default class AjaxFormSubmit {
     return host
   }
 
-  #initSuccessHandler(handlerProps) {
+  #initSuccessHandler(handlerProps = {}) {
+    assert(isObject(handlerProps), 1, OBJECT)
     return new SuccessHandler({
       root: this.#root,
       domHelper: this.#domHelper,
@@ -317,14 +318,17 @@ export default class AjaxFormSubmit {
     formSubmitAuto.all.push(this)
   }
 
+  // TODO finetune middleware args
+  // TODO implement abortable
   #handleBefore(request, opts) {
     return this.#plugins.ready()
       .then(() => this.#getMiddleware('before', opts)({ request, root: this.#root }))
       .then(result => hasValue(result?.request) ? result.request : request)
       .then(result => {
-        this.#plugins.broadcast(EVENT_LIFECYCLE_BEFORE, { request: result })
+        const data = { request: result }
+        this.#plugins.broadcast(EVENT_LIFECYCLE_BEFORE, data)
         this.#resetUIControls()
-        this.#successHandler.before(opts)
+        this.#successHandler.before(opts, data)
         return result
       })
   }
@@ -369,6 +373,9 @@ export default class AjaxFormSubmit {
 
   #handleRequest(request, opts) {
     const type = this.#getParameters('type', opts)[0] || 'ajax'
+
+    // TODO refactor for sse, websocket, download file
+    // TODO querystring
     const requestParams = {
       method: this.#getParameters('method', opts)[0],
       url: this.#getParameters('action', opts, opts.url)[0],
@@ -386,10 +393,11 @@ export default class AjaxFormSubmit {
       .then(() => this.#getMiddleware('request', opts)({ request, root: this.#root}))
       .then(result => hasValue(result?.request) ? result.request : request)
       .then(result => {
-        this.#plugins.broadcast(EVENT_LIFECYCLE_REQUEST, { request: result })
-        this.#successHandler.request(opts, result)
+        const data = { request: result }
+        this.#plugins.broadcast(EVENT_LIFECYCLE_REQUEST, data)
+        this.#successHandler.request(opts, data)
         return this.#submitHandler.run(type, opts, result, requestParams)
-          .then(res => ({ request: result, response: res }))
+          .then(res => ({ ...data, response: res }))
       })
   }
 
@@ -397,36 +405,31 @@ export default class AjaxFormSubmit {
     const { checkResponse } = this.#config.get('response.checkResponse')
 
     return this.#getMiddleware('response', opts)({ request, response, root: this.#root})
-    .then(result => hasValue(result?.response) ? result.response : response)
-    .then(result => checkResponse(result) ? result : Promise.reject(result))
-    .then(result => {
-      const payload = { request, response: result }
-      this.#plugins.broadcast(EVENT_LIFECYCLE_RESPONSE, payload)
-      triggerEvent(this.#controls.progress, EVENT_UPLOAD_STOP)
-      this.#resetUIControls()
-      this.#successHandler.response(opts, request, result)
-      return payload
-    })
+      .then(result => hasValue(result?.response) ? result.response : response)
+      .then(result => checkResponse(result) ? result : Promise.reject(result))
+      .then(result => {
+        const data = { request, response: result }
+        this.#plugins.broadcast(EVENT_LIFECYCLE_RESPONSE, data)
+        triggerEvent(this.#controls.progress, EVENT_UPLOAD_STOP)
+        this.#resetUIControls()
+        this.#successHandler.response(opts, data)
+        return data
+      })
   }
 
   #handleAfter(request, response, opts) {
     const { getData, getPage } = this.#config.get(['response.getData', 'response.getPage'])
 
     return this.#getMiddleware('after', opts)({ request, response, root: this.#root}).then(_ => {
-      const data = getData(response)
-      const page = getPage(response)
-      this.#plugins.broadcast(EVENT_LIFECYCLE_AFTER, { request, response, page })
-
-      const {
-        inputMessage, outputMessage, pageMessage
-      } = classifyMessageControl(this.#controls.messageSuccess)
-
-      inputMessage.forEach(elem => this.#domHelper.setValueToElement(elem, request))
-      outputMessage.forEach(elem => this.#domHelper.setValueToElement(elem, data))
-      pageMessage.forEach(elem => this.#domHelper.setValueToElement(elem, page))
+      const data = {
+        request,
+        response: getData(response),
+        page: getPage(response)
+      }
+      this.#plugins.broadcast(EVENT_LIFECYCLE_AFTER, data)
       showElements(this.#controls.messageSuccess)
-      this.#successHandler.after(opts, request, data)
-      return response
+      this.#successHandler.after(opts, data)
+      return data
     })
   }
 
@@ -464,8 +467,8 @@ export default class AjaxFormSubmit {
     this.#parameters.apply ||= {}
     const attrName = this.#datasetHelper.keyToAttrName('applied')
     const payload = {
-      input: event?.detail?.input,
-      output:  event?.detail?.output,
+      request: event?.detail?.request,
+      response:  event?.detail?.response,
     }
 
     for (const [type, applyData] of objectEntries(payload)) {
@@ -476,11 +479,14 @@ export default class AjaxFormSubmit {
           const allAttr = `[${attrName}="${key}"]`
           const typeAttr = `[${attrName}-${type}="${key}"]`
 
+          // TODO use createProperty
           this.#queryFormInput(`${allAttr},${typeAttr}`)
             .forEach(({ name }) => this.#parameters.apply[name] = values)
         }
 
       } else if (hasValue(applyData)) {
+
+        // TODO need refactor
         this.#queryFormInput(`[${attrName}="${FORM_APPLY_CLASS_NAME}-${type}"]`)
           .forEach(({ name }) => this.#parameters.apply[name] = valueToString(applyData))
       }
@@ -550,11 +556,11 @@ export default class AjaxFormSubmit {
   }
 
   #queryFormInput(selector) {
-    return [
+    const inputs = [
       ...this.#root.elements,
       ...querySelector(this.#getParameters('input'))
-          .filter(el => !el.disabled && isNotBlank(el.name))
-    ].reduce((acc, el) => {
+    ]
+    return inputs.filter(el => !el.disabled && isNotBlank(el.name)).reduce((acc, el) => {
       if (isNotBlank(selector)) {
         el.matches(selector) && acc.push(el)
       } else {
@@ -680,20 +686,6 @@ function deepFilterArrays(obj) {
     )
   }
   return obj
-}
-
-function classifyMessageControl(controls) {
-  const inputMessage = [], outputMessage = [], pageMessage = []
-  controls?.forEach?.(elem => {
-    if (hasClass(elem, FORM_MESSAGE_PAYLOAD_INPUT_CLASS_NAME)) {
-      inputMessage.push(elem)
-    } else if (hasClass(elem, FORM_MESSAGE_PAYLOAD_OUTPUT_CLASS_NAME)) {
-      outputMessage.push(elem)
-    } else if (hasClass(elem, FORM_MESSAGE_PAYLOAD_PAGE_CLASS_NAME)) {
-      pageMessage.push(elem)
-    }
-  })
-  return { inputMessage, outputMessage, pageMessage }
 }
 
 window.AjaxFormSubmit = AjaxFormSubmit

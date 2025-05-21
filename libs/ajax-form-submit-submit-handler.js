@@ -1,4 +1,4 @@
-import { FUNCTION, STRING_NON_BLANK } from './js-constant.js'
+import { FUNCTION, STRING_NON_BLANK } from '#libs/js-constant'
 import {
   assert,
   hasValue,
@@ -10,7 +10,7 @@ import {
   stringToValue,
   valueToString,
   toArray
-} from './js-utils.js'
+} from '#libs/js-utils'
 
 let HANDLERS = {
   bypass: { callback: handleBypass, wrapResponse: true },
@@ -46,10 +46,12 @@ export default class AjaxFormSubmitSubmitHandler {
   }
 }
 
+// TODO need refactor
 function handleBypass(opts, input) {
-  return 'data' in input ? input : { data: [input]}
+  return 'data' in input ? input : { data: [input] }
 }
 
+// TODO need refactor
 function handleMock(opts, input) {
   const size = input.size || 10
   const number = input.page || 0
@@ -61,7 +63,7 @@ function handleMock(opts, input) {
   }
 }
 
-//TODO 
+//TODO need refactor
 function handleLocalStorage(opts, input, requestParams) {
   let result = {}
   const { method } = requestParams

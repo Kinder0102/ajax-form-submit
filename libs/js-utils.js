@@ -1,4 +1,4 @@
-import { STRING_NON_BLANK } from './js-constant.js'
+import { STRING_NON_BLANK } from '#libs/js-constant'
 
 const URL_PATTERN = /http(s)?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{2,256}(\.[a-z]{2,6})?\b([-a-zA-Z0-9@:%_\+.~#?&\/\/=]*)/g
 const FALSY_VALUES = ['false', '0', 'no', 'off', '']

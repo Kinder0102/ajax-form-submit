@@ -1,4 +1,4 @@
-import { HTML_ELEMENT, HTML_INPUT, HTML_SELECT, HTML_CHECKBOX } from './js-constant.js'
+import { HTML_ELEMENT, HTML_INPUT, HTML_SELECT, HTML_CHECKBOX } from '#libs/js-constant'
 
 import {
   assert,
@@ -18,7 +18,7 @@ import {
   formatDate,
   addBasePath,
   toCamelCase
-} from './js-utils.js'
+} from '#libs/js-utils'
 
 import {
   elementIs,
@@ -26,11 +26,11 @@ import {
   querySelector,
   showElements,
   hideElements
-} from './js-dom-utils.js'
+} from '#libs/js-dom-utils'
 
-import { createDatasetHelper } from './js-dataset-helper.js'
-import { createProperty, createFilter, createTemplateHandler } from './js-property-factory.js'
-import { createCache } from './js-cache.js'
+import { createDatasetHelper } from '#libs/js-dataset-helper'
+import { createProperty, createFilter, createTemplateHandler } from '#libs/js-property-factory'
+import { createCache } from '#libs/js-cache'
 
 const BASE_PATH = '/'
 const CLASS_NAME = 'dom-helper'
@@ -165,7 +165,7 @@ export default class DOMHelper {
       arraySeq += 1
       setValue(el, 'array-seq', arraySeq)
     })
-    return result.filter(hasValue)
+    return result.filter(isElement)
   }
 
   #appendElement(el, data, template) {
@@ -320,6 +320,7 @@ function processEnum(enums, args = []) {
   }
 }
 
+// TODO need refactor
 function createEnums(props) {
   let enums = {}
   const result = {

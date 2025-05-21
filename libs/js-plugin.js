@@ -1,6 +1,6 @@
-import { STRING_NON_BLANK, HTML_ELEMENT } from './js-constant.js'
-import { assert, isNotBlank, isPromise, isElement } from './js-utils.js'
-import { registerEvent, triggerEvent } from './js-dom-utils.js'
+import { STRING_NON_BLANK, HTML_ELEMENT } from '#libs/js-constant'
+import { assert, isNotBlank, isPromise, isElement } from '#libs/js-utils'
+import { registerEvent, triggerEvent } from '#libs/js-dom-utils'
 
 const CLASS_NAME = 'js-plugin'
 const EVENT_CHECK = `${CLASS_NAME}:check`

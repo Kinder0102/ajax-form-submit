@@ -1,4 +1,4 @@
-import { OBJECT, FUNCTION, STRING_NON_BLANK } from './js-constant.js'
+import { OBJECT, FUNCTION, STRING_NON_BLANK } from '#libs/js-constant'
 import {
   assert,
   formatUrl,
@@ -16,11 +16,11 @@ import {
   valueToString,
   findObjectValue,
   addBasePath
-} from './js-utils.js'
+} from '#libs/js-utils'
 
-import { triggerEvent, showElements, hideElements, getTargets } from './js-dom-utils.js'
+import { triggerEvent, showElements, hideElements, getTargets } from '#libs/js-dom-utils'
 import { createDatasetHelper } from '#libs/js-dataset-helper'
-import { createProperty } from './js-property-factory.js'
+import { createProperty } from '#libs/js-property-factory'
 
 const ATTR_KEY = 'success'
 const HANDLERS = {}
@@ -54,17 +54,17 @@ export default class AjaxFormSubmitSuccessHandler {
     this.#payload = { datasetHelper, ...rest }
     this.#defaultProps = handlerProps || {}
     datasetHelper.getKeys(opts.root, ATTR_KEY).forEach(({ key, name }) => {
-      const props = datasetHelper.getValue(opts.root, key)
+      const props = datasetHelper.getValue(opts.root, key, '')
       const current = this.#defaultProps[name]
       this.#defaultProps[name] = hasValue(current) ? [...toArray(current), props] : props
     })
     
     for (const lifecycle of LIFECYCLES) {
-      this[lifecycle.name] = (opts, input, output) => this.#run(lifecycle, opts, input, output)
+      this[lifecycle.name] = (opts, data) => this.#run(lifecycle, opts, data)
     }
   }
 
-  #run(lifecycle, opts, input, output) {
+  #run(lifecycle, opts, data) {
     const types = new Set(objectKeys(this.#defaultProps))
     objectKeys(opts.property || {}).forEach(type => {
       const { exist, value } = startsWith(type, `${ATTR_KEY}-`)
@@ -77,8 +77,9 @@ export default class AjaxFormSubmitSuccessHandler {
 
       const payloadProps = opts.property?.[`${ATTR_KEY}-${type}`]
       const defaultProps = this.#defaultProps[type]
+      // TODO props from opts
       createProperty([defaultProps, payloadProps].flat())
-        .forEach(props => handler?.(input, output, props, { ...this.#payload, ...opts }))
+        .forEach(props => handler?.(data, props, { ...this.#payload, ...opts }))
     }
   }
 }
@@ -99,17 +100,17 @@ function addHandler(type, callback) {
 }
 
 export function handleEvent(defaultEventName) {
-  return (input, output, { target, event, ...props }, { root }) => {
+  return (data, { target, event, ...props }, { root }) => {
     const events = new Set(event)
     if (isNotBlank(defaultEventName) && events.size === 0)
       events.add(defaultEventName)
 
-    getTargets(target, root).forEach(elem => events.forEach(eventName =>
-      triggerEvent(elem, eventName, { input, output, props })))
+    getTargets(target, root).forEach(el => events.forEach(eventName =>
+      triggerEvent(el, eventName, { ...data, props })))
   }
 }
 
-function handleRedirect(input, output, { target, type, param }, { basePath }) {
+function handleRedirect({ request, response }, { target, type, param }, { basePath }) {
   let url = target?.[0]
 
   switch(type?.[0]) {
@@ -127,11 +128,11 @@ function handleRedirect(input, output, { target, type, param }, { basePath }) {
       if (!isNotBlank(url)) {
         location.reload()
       } else {
-        const outputObj = isObject(output) ? output : { value: output }
-        url = addBasePath(formatUrl(formatUrl(target[0], input), outputObj), basePath)
+        const outputObj = isObject(response) ? response : { value: response }
+        url = addBasePath(formatUrl(formatUrl(target[0], request), outputObj), basePath)
         let params = new URLSearchParams()
         param?.forEach?.(key => {
-          const inputValue = findObjectValue(input, key)
+          const inputValue = findObjectValue(request, key)
           const outputValue = findObjectValue(outputObj, key)
           inputValue.exist && params.set(key, inputValue.value)
           outputValue.exist && params.set(key, outputValue.value)
@@ -148,37 +149,37 @@ function handleRedirect(input, output, { target, type, param }, { basePath }) {
 function handleDisplay() {
   const group = 'skeleton'
   return {
-    before: (input, output, { target }, { parameter, domHelper, datasetHelper }) => {
-      getTargets(target).forEach(elem => {
-        const props = createProperty(datasetHelper.getValue(elem, 'template'))[0]
-        !parameter?.includes('append') && !isTrue(props.append?.[0]) && domHelper?.clearElement?.(elem)
+    before: (_, { target }, { parameter, domHelper, datasetHelper }) => {
+      getTargets(target).forEach(el => {
+        const props = createProperty(datasetHelper.getValue(el, 'template'))[0]
+        !parameter?.includes('append') && !isTrue(props.append?.[0]) && domHelper?.clearElement?.(el)
       })
     },
-    request: (input, output, { target }, { domHelper, datasetHelper }) => {
-      const mock = toArray({ length: input?.size || 1 }, () => ({}))
-      getTargets(target).forEach(elem => {
-        const { skeleton: [template] = [] } = createProperty(datasetHelper.getValue(elem, 'template'))[0]
-        isNotBlank(template) && domHelper?.setValueToElement?.(elem, mock, { template, group })
+    request: ({ request }, { target }, { domHelper, datasetHelper }) => {
+      const mock = toArray({ length: request?.size || 1 }, () => ({}))
+      getTargets(target).forEach(el => {
+        const { skeleton: [template] = [] } = createProperty(datasetHelper.getValue(el, 'template'))[0]
+        isNotBlank(template) && domHelper?.setValueToElement?.(el, mock, { template, group })
       })
     },
-    after: (input, output, { target }, { domHelper }) => {
-      getTargets(target).forEach(elem => {
-        domHelper?.clearElement?.(elem, group)
-        domHelper?.setValueToElement?.(elem, output)
+    after: (data, { target }, { domHelper, datasetHelper }) => {
+      getTargets(target).forEach(el => {
+        domHelper?.clearElement?.(el, group)
+        domHelper?.setValueToElement?.(el, data[datasetHelper.getValue(el, 'value')] ?? data.response)
       })
     }
   }
 }
 
-function handleShow(input, output, { target }, { root }) {
+function handleShow(_, { target }, { root }) {
   showElements(getTargets(target, root))
 }
 
-function handleHide(input, output, { target }, { root }) {
+function handleHide(_, { target }, { root }) {
   hideElements(getTargets(target, root))
 }
 
-function handleUpdateQueryString(input, output, { add, remove, value }) {
+function handleUpdateQueryString({ request }, { add, remove, value }) {
   const { host, protocol, pathname } = location
   const includes = new Set([ ...(add || []), ...(value || []) ])
   const excludes = new Set(remove || [])
@@ -187,9 +188,9 @@ function handleUpdateQueryString(input, output, { add, remove, value }) {
   const hasIncludes = includes.size > 0
   const hasExcludes = !hasIncludes && excludes?.size > 0
 
-  objectKeys(input).forEach(key => {
+  objectKeys(request).forEach(key => {
     if (hasIncludes ? includes.has(key) : hasExcludes ? !excludes.has(key) : true) {
-      const val = input[key]
+      const val = request[key]
       if (isArray(val)) {
         searchParams.delete(key)
         val.forEach(item => searchParams.append(key, item))
@@ -210,14 +211,13 @@ function handleUpdateQueryString(input, output, { add, remove, value }) {
   history.replaceState({ path: url.href }, '', url.href)
 }
 
-function handleStorage(input, output, { value }, { root, prefix }) {
+function handleStorage(data, { value }, { root, prefix }) {
   if (!localStorage)
     return
 
   const elemKey = isElement(root) ? (root.id || root.name || '') : ''
   const storagePrefix = `${prefix}${isNotBlank(elemKey) ? '-': ''}${elemKey}`
 
-  const data = { input, output }
   let callback = () => {}
   value?.filter(isNotBlank).forEach(key => {
     const storageKey = `${storagePrefix}-${key}`

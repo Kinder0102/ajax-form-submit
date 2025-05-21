@@ -1,5 +1,5 @@
-import { ARRAY_STRING, STRING_NON_BLANK } from './js-constant.js'
-import { assert, isNotBlank, toArray, findObjectValue } from './js-utils.js'
+import { ARRAY_STRING, STRING_NON_BLANK } from '#libs/js-constant'
+import { assert, isNotBlank, toArray, findObjectValue } from '#libs/js-utils'
 
 export function createConfig() {
   const sources = [...arguments]

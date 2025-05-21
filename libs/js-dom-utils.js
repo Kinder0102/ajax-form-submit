@@ -5,7 +5,7 @@ import {
   FUNCTION,
   DOCUMENT,
   HTML_ELEMENT,
-} from './js-constant.js'
+} from '#libs/js-constant'
 
 import {
   assert,
@@ -18,7 +18,7 @@ import {
   objectValues,
   split,
   startsWith
-} from './js-utils.js'
+} from '#libs/js-utils'
 
 export function elementIs(el, type) {
   if (!isElement(el))
@@ -69,6 +69,7 @@ export function getTargets(targets, el) {
   const input = split(targets, ',')
   const result = new Set()
 
+  // TODO need finetune
   input.forEach(target => {
     if (target.startsWith('self') || target.startsWith('parent') || target.startsWith('peer')) {
       let elems = [ el ].filter(isElement)

@@ -1,6 +1,6 @@
-import { STRING_NON_BLANK, FUNCTION, ERROR_CONFIRM } from './js-constant.js'
-import { assert, toArray, isObject, isFunction, isPromise, isNotBlank, isTrue } from './js-utils.js'
-import { createProperty } from './js-property-factory.js'
+import { STRING_NON_BLANK, FUNCTION, ERROR_CONFIRM } from '#libs/js-constant'
+import { assert, toArray, isObject, isFunction, isPromise, isNotBlank, isTrue } from '#libs/js-utils'
+import { createProperty } from '#libs/js-property-factory'
 
 export default class MiddlewareFactory {
 

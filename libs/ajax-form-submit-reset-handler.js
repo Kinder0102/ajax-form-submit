@@ -1,6 +1,6 @@
-import { STRING_NON_BLANK, FUNCTION, HTML_CHECKBOX, HTML_RADIO } from './js-constant.js'
-import { assert, isFunction, isNotBlank } from './js-utils.js'
-import { querySelector, triggerEvent } from './js-dom-utils.js'
+import { STRING_NON_BLANK, FUNCTION, HTML_SELECT, HTML_CHECKBOX, HTML_RADIO } from '#libs/js-constant'
+import { assert, isFunction, isNotBlank } from '#libs/js-utils'
+import { querySelector, triggerEvent } from '#libs/js-dom-utils'
 
 let HANDLERS_BEFORE = { clear }
 let HANDLERS_AFTER = { submit }
@@ -50,7 +50,7 @@ function clear(el, opts) {
     field.defaultValue = ''
     if (type === HTML_CHECKBOX || type === HTML_RADIO)
       field.defaultChecked = false
-    if (tag === 'select') {
+    if (tag === HTML_SELECT) {
       const options = field.options
       for (let i = 0; i < options.length; i++) {
         options[i].defaultSelected = false
