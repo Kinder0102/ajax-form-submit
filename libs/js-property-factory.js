@@ -9,6 +9,7 @@ import {
   isElement,
   hasValue,
   toArray,
+  valueToString,
   objectKeys,
   objectEntries,
   split,
@@ -110,7 +111,7 @@ export const createFilter = filterProp => {
 
 function createDefaultTemplate(data) {
   const template = document.createElement('span')
-  template.textContent = JSON.stringify(data)
+  template.textContent = valueToString(data)
   return template
 }
 

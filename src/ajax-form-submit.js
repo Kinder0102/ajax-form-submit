@@ -86,7 +86,7 @@ const UI_CONTROLS = {
   messageError: { name: `${FORM_CLASS_NAME}-message-error`, show: true },
 }
 
-const PARAMETER = [
+const WITH = [
   { name: 'append' },
   { name: 'page' },
   { name: 'querystring' },
@@ -143,7 +143,7 @@ export default class AjaxFormSubmit {
 
   #root
   #config
-  #parameters
+  #with
   #datasetHelper
   #domHelper
   #controls
@@ -158,7 +158,7 @@ export default class AjaxFormSubmit {
     this.#root = elementIs(root, 'form') ? root : document.createElement('form')
     this.#root.noValidate = true
     this.#config = createConfig(opts.config || {}, AjaxFormSubmit.config, DEFAULT_CONFIG)
-    this.#parameters = {}
+    this.#with = {}
 
     const { prefix } = this.#config.get('prefix')
     this.#datasetHelper = createDatasetHelper(prefix)
@@ -190,7 +190,7 @@ export default class AjaxFormSubmit {
   }
 
   submit(opts = {}) {
-    const { data, ...options } = { ...opts, ...this.#generateDataAndProps(opts.parameter)}
+    const { data, ...options } = { ...opts, ...this.#generateDataAndProps(opts.with)}
     return this.#handleBefore(data, options)
       .then(request => this.#handleValidation(request, options))
       .then(request => this.#handleRequest(request, options))
@@ -217,22 +217,9 @@ export default class AjaxFormSubmit {
 
   #readFormConfig() {
     let instanceConfig = this.#config.getSource(0) || {}
-    createProperty(this.#getParameters('config')).forEach(config => {
-      for (const [key, values] of objectEntries(config)) {
-        if (hasValue(values[0]))
-          instanceConfig[key] = values[0]
-      }
-    })
-  }
-
-  #initSubmitHandler() {
-    const handleProgress = this.#handleProgress.bind(this)
-    const {
-      prefix,
-      basePath,
-      create: createResponse
-    } = this.#config.get(['prefix', 'basePath', 'response.create'])
-    return new SubmitHandler({ prefix, basePath, createResponse, handleProgress })
+    for (const [key, [value] = values] of objectEntries(this.#datasetToProps('config'))) {
+      hasValue(value) && (instanceConfig[key] = value)
+    }
   }
 
   #initUIControls(controls = {}) {
@@ -240,22 +227,22 @@ export default class AjaxFormSubmit {
     let result = {}
     for (const [key, { name }] of objectEntries(UI_CONTROLS)) {
       result[key] = [
-        ...querySelector(this.#getParameters(key)),
+        ...querySelector(this.#datasetToProps(key).value),
         ...querySelector(`.${name}`, this.#root)
       ]
     }
-    for (const [type, value] of objectEntries(controls))
+    for (const [type, value] of objectEntries(controls)) {
       querySelector(value).forEach(elem => result[type]?.push(elem))
+    }
     return result
   }
 
   #initTriggers(triggers = []) {
     assert(isArray(triggers), 1, ARRAY)
-    const props = createProperty(this.#getParameters('trigger'))[0]
     const attrName = this.#datasetHelper.keyToAttrName('trigger')
     const result = [
       ...querySelector(triggers),
-      ...querySelector(props?.value),
+      ...querySelector(this.#datasetToProps('trigger').value),
       ...querySelector(`button[type="submit"], button:not([type]), [${attrName}]`, this.#root)
     ]
 
@@ -278,10 +265,20 @@ export default class AjaxFormSubmit {
     const host = new PluginHost(this.#root)
     const result = [
       ...querySelector(plugins),
-      ...querySelector(this.#getParameters('plugin')),
+      ...querySelector(this.#datasetToProps('plugin').value),
     ]
     result.forEach(el => host.addPlugin(el))
     return host
+  }
+
+  #initSubmitHandler() {
+    const handleProgress = this.#handleProgress.bind(this)
+    const {
+      prefix,
+      basePath,
+      create: createResponse
+    } = this.#config.get(['prefix', 'basePath', 'response.create'])
+    return new SubmitHandler({ prefix, basePath, createResponse, handleProgress })
   }
 
   #initSuccessHandler(handlerProps = {}) {
@@ -299,20 +296,18 @@ export default class AjaxFormSubmit {
     if (!(this.#datasetHelper.keyToDatasetName('auto') in this.#root.dataset))
       return
 
-    const parameter = this.#getParameters('auto')[0]
-    const { type, value } = createProperty(parameter)[0]
-
+    const { type, value } = this.#datasetToProps('auto')
     if (value.includes('querystring')) {
       const query = new URLSearchParams(location.search)
-      let result = {}
+      let data = {}
       for (const [key, value] of query.entries()) {
-        if (hasValue(result[key])) {
-          result[key] = isArray(result[key]) ? [...result[key], value] : [result[key], value]
+        if (hasValue(data[key])) {
+          data[key] = isArray(data[key]) ? [...data[key], value] : [data[key], value]
         } else {
-          result[key] = value
+          data[key] = value
         }
       }
-      this.#parameters.querystring = result
+      this.#with.querystring = { data }
     }
 
     formSubmitAuto.all.push(this)
@@ -464,8 +459,9 @@ export default class AjaxFormSubmit {
 
   #handleEventApplied(event) {
     stopDefaultEvent(event)
-    this.#parameters.apply ||= {}
+    const withProps = {}
     const attrName = this.#datasetHelper.keyToAttrName('applied')
+    const selectors = new Map()
     const payload = {
       request: event?.detail?.request,
       response:  event?.detail?.response,
@@ -474,45 +470,44 @@ export default class AjaxFormSubmit {
     for (const [type, applyData] of objectEntries(payload)) {
       let targets = []
       if (isObject(applyData)) {
-
-        for (const [key, values] of objectEntries(applyData)) {
-          const allAttr = `[${attrName}="${key}"]`
-          const typeAttr = `[${attrName}-${type}="${key}"]`
-
-          // TODO use createProperty
-          this.#queryFormInput(`${allAttr},${typeAttr}`)
-            .forEach(({ name }) => this.#parameters.apply[name] = values)
+        for (const [key, value] of objectEntries(applyData)) {
+          selectors.set(`[${attrName}="${key}"],[${attrName}-${type}="${key}"]`, value)
         }
-
       } else if (hasValue(applyData)) {
-
-        // TODO need refactor
-        this.#queryFormInput(`[${attrName}="${FORM_APPLY_CLASS_NAME}-${type}"]`)
-          .forEach(({ name }) => this.#parameters.apply[name] = valueToString(applyData))
+        selectors.set(`[${attrName}="${FORM_APPLY_CLASS_NAME}-${type}"]`, applyData)
       }
     }
+    selectors.forEach((value, selector) => this.#queryFormInput(selector).forEach(el => {
+      const toProps = this.#datasetToProps('to', el)
+      const toType = toProps.type[0] ?? toProps?.value[0] ?? 'data'
+      withProps[toType] ||= {}
+      withProps[toType][el.name] = value
+    }))
+    this.#with.apply = withProps
   }
 
   #handleEventTriggered(event) {
     this.#handleEventApplied(event)
-    this.submitSync({ parameter: event?.detail?.props?.parameter })
+    this.submitSync({ with: event?.detail?.props?.with })
   }
 
   #handleEventPageUpdate(event) {
     stopDefaultEvent(event)
     const { pagination } = this.#config.get('pagination')
     const { detail } = event
-    this.#parameters.page = {
-      [pagination.page]: detail[pagination.page],
-      [pagination.size]: detail[pagination.size],
+    this.#with.page = {
+      data: {
+        [pagination.page]: detail[pagination.page],
+        [pagination.size]: detail[pagination.size],
+      }
     }
-    this.submitSync({ parameter: ['page', ...(detail.parameters ?? [])] })
+    this.submitSync({ with: ['page', ...(detail.with ?? [])] })
   }
 
   #handleEventReset(event) {
     this.#plugins.broadcast(EVENT_RESET)
     this.#resetUIControls()
-    this.#resetHandler.run(createProperty(this.#getParameters('reset'))[0])
+    this.#resetHandler.run(this.#datasetToProps('reset'))
   }
 
   #getParameters(key, opts, defaultValue) {
@@ -538,6 +533,10 @@ export default class AjaxFormSubmit {
     return toArray(defaultValue)
   }
 
+  #datasetToProps(key, el = this.#root) {
+    return createProperty(this.#datasetHelper.getValue(el, key))[0] ?? {}
+  }
+
   #getMiddleware(lifecycle, opts) {
     const attrName = `middleware-${lifecycle}`
     const middleware = opts.property?.[attrName] ?? this.#middlewares?.[lifecycle]
@@ -558,7 +557,7 @@ export default class AjaxFormSubmit {
   #queryFormInput(selector) {
     const inputs = [
       ...this.#root.elements,
-      ...querySelector(this.#getParameters('input'))
+      ...querySelector(this.#datasetToProps('input').value)
     ]
     return inputs.filter(el => !el.disabled && isNotBlank(el.name)).reduce((acc, el) => {
       if (isNotBlank(selector)) {
@@ -570,12 +569,13 @@ export default class AjaxFormSubmit {
     }, [])
   }
 
-  #generateDataAndProps(parameter = []) {
+  #generateDataAndProps(withParams = []) {
     const { from } = this.#config.get('request.from')
     const groups = {}
+
     for (const el of this.#queryFormInput()) {
-      const toProp = createProperty(this.#datasetHelper.getValue(el, 'to'))[0]
-      const toType = toProp.type[0] ?? toProp?.value[0] ?? 'data'
+      const toProps = this.#datasetToProps('to', el)
+      const toType = toProps.type[0] ?? toProps?.value[0] ?? 'data'
       const { exist, value } = endsWith(el.name, '[]')
       groups[toType] ||= {}
       const target = groups[toType]
@@ -584,6 +584,17 @@ export default class AjaxFormSubmit {
         target[value].push(el)
       } else {
         target[value] = el
+      }
+    }
+
+    for (const { name, required } of WITH) {
+      if (required || withParams.includes(name)) {
+        for (const [toType, values] of objectEntries(this.#with[name])) {
+          for (const [key, value] of objectEntries(values)) {
+            groups[toType] ||= {}
+            groups[toType][key] = value
+          }
+        }
       }
     }
 
@@ -601,17 +612,12 @@ export default class AjaxFormSubmit {
         setNestedValue(result[type], name, value)
       }
     }
-
-    PARAMETER.forEach(({ name, required }) => {
-      if (required || parameter.includes(name))
-        objectEntries(this.#parameters[name])
-          .forEach(([key, value]) => result.data[key] = value)
-    })
-
     return deepFilterArrays(result)
   }
 
   #getElementValue(el, getFrom, multiple) {
+    if (!isElement(el))
+      return el
     let result
     const { type, value, checked, files } = el
     switch(type) {
@@ -633,45 +639,57 @@ export default class AjaxFormSubmit {
     }
 
     if (result !== undefined) {
-      const {
-        type: [fromType],
-        value: [pattern]
-      } = createProperty(this.#datasetHelper.getValue(el, 'from'))[0]
+      const { type: [fromType], value: [pattern] } = this.#datasetToProps('from', el)
       const key = formatString(pattern, result)
       return getFrom?.[fromType]?.(key) ?? key
     }
   }
 }
 
+// function setNestedValue(obj, name, value) {
+//   if (!hasValue(value))
+//     return
+
+//   const keys = name.replace(/\[(\d*)\]/g, (_, i) => i ? `.${i}` : '.[]').split('.')
+//   keys.reduce((acc, key, index) => {
+//     if (index === keys.length - 1) {
+//       if (key === '[]') {
+//         if (!isArray(acc))
+//           acc = []
+//         acc.push(...toArray(value))
+//       } else if (hasValue(acc[key])) {
+//         if (!isArray(acc[key]))
+//           acc[key] = [acc[key]]
+//         acc[key].push(value)
+//       } else {
+//         acc[key] = value
+//       }
+//     } else {
+//       if (key === '[]') {
+//         if (!isArray(acc))
+//           acc[key] = []
+//       } else if (!acc[key]) {
+//         const nextKey = keys[index + 1]
+//         acc[key] = /^\d+$/.test(nextKey) || nextKey === '[]' ? [] : {}
+//       }
+//     }
+//     return acc[key]
+//   }, obj)
+// }
+
 function setNestedValue(obj, name, value) {
-  if (!hasValue(value))
+  if (!isObject(obj))
     return
 
-  const keys = name.replace(/\[(\d*)\]/g, (_, i) => i ? `.${i}` : '.[]').split('.')
-  keys.reduce((acc, key, index) => {
-    if (index === keys.length - 1) {
-      if (key === '[]') {
-        if (!isArray(acc))
-          acc = []
-        acc.push(...toArray(value))
-      } else if (hasValue(acc[key])) {
-        if (!isArray(acc[key]))
-          acc[key] = [acc[key]]
-        acc[key].push(value)
-      } else {
-        acc[key] = value
-      }
+  const keys = isArray(name) ? name : (name.toString().match(/[^.[\]]+/g) || [])
+  keys.slice(0, -1).reduce((acc, key, index) => {
+    if (Object(acc[key]) === acc[key]) {
+      return acc[key]
     } else {
-      if (key === '[]') {
-        if (!isArray(acc))
-          acc[key] = []
-      } else if (!acc[key]) {
-        const nextKey = keys[index + 1]
-        acc[key] = /^\d+$/.test(nextKey) || nextKey === '[]' ? [] : {}
-      }
+      acc[key] = isInteger(keys[index + 1]) ? [] : {}
+      return acc[key]
     }
-    return acc[key]
-  }, obj)
+  }, obj)[keys[keys.length - 1]] = value
 }
 
 function deepFilterArrays(obj) {
@@ -695,8 +713,7 @@ window.addEventListener('DOMContentLoaded', event => {
   registerMutationObserver(el =>
     querySelector(selector, el, true).forEach(form => AjaxFormSubmit.instance.create(form)))
 
-  const parameter = [ 'querystring' ]
   for (const [key, value] of objectEntries(formSubmitAuto)) {
-    toArray(value).forEach(form => form.submit({ parameter }).catch(_ => {}))
+    toArray(value).forEach(form => form.submitSync({ with: ['querystring'] }))
   }
 }, { once: true })

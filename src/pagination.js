@@ -74,7 +74,7 @@ export default class Pagination {
     const mode = datasetHelper.getValue(root, 'mode') || 'button'
     const plugin = new Plugin(CLASS_NAME, root)
     const modeHandler = this.#createModeHandler(root, mode, datasetHelper,
-      (page, size, parameters) => plugin.broadcast(EVENT_PAGING, { page, size, parameters }))
+      (page, size, parameters) => plugin.broadcast(EVENT_PAGING, { page, size, with: parameters }))
 
     registerEvent(root, [EVENT_LIFECYCLE_BEFORE, EVENT_LIFECYCLE_RESET], event => modeHandler.reset())
     registerEvent(root, EVENT_LIFECYCLE_AFTER, event => modeHandler.setPage(event.detail.page))

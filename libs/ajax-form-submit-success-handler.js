@@ -149,23 +149,23 @@ function handleRedirect({ request, response }, { target, type, param }, { basePa
 function handleDisplay() {
   const group = 'skeleton'
   return {
-    before: (_, { target }, { parameter, domHelper, datasetHelper }) => {
+    before: (_, { target }, opts) => {
       getTargets(target).forEach(el => {
-        const props = createProperty(datasetHelper.getValue(el, 'template'))[0]
-        !parameter?.includes('append') && !isTrue(props.append?.[0]) && domHelper?.clearElement?.(el)
+        const props = createProperty(opts.datasetHelper.getValue(el, 'template'))[0]
+        !opts.with?.includes('append') && !isTrue(props.append?.[0]) && opts.domHelper.clearElement(el)
       })
     },
     request: ({ request }, { target }, { domHelper, datasetHelper }) => {
       const mock = toArray({ length: request?.size || 1 }, () => ({}))
       getTargets(target).forEach(el => {
         const { skeleton: [template] = [] } = createProperty(datasetHelper.getValue(el, 'template'))[0]
-        isNotBlank(template) && domHelper?.setValueToElement?.(el, mock, { template, group })
+        isNotBlank(template) && domHelper.setValueToElement(el, mock, { template, group })
       })
     },
     after: (data, { target }, { domHelper, datasetHelper }) => {
       getTargets(target).forEach(el => {
-        domHelper?.clearElement?.(el, group)
-        domHelper?.setValueToElement?.(el, data[datasetHelper.getValue(el, 'value')] ?? data.response)
+        domHelper.clearElement(el, group)
+        domHelper.setValueToElement(el, data[datasetHelper.getValue(el, 'value')] ?? data.response)
       })
     }
   }
@@ -193,9 +193,9 @@ function handleUpdateQueryString({ request }, { add, remove, value }) {
       const val = request[key]
       if (isArray(val)) {
         searchParams.delete(key)
-        val.forEach(item => searchParams.append(key, item))
+        val.forEach(item => searchParams.append(key, valueToString(item)))
       } else if (isObject(val)) {
-        searchParams.set(key, JSON.stringify(val))
+        searchParams.set(key, valueToString(val))
       } else if (hasValue(val)) {
         if (isString(val)) {
           isNotBlank(val) ? searchParams.set(key, val) : searchParams.delete(key)

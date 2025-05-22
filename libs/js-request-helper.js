@@ -1,4 +1,12 @@
-import { isArray, isNotBlank, toArray, objectEntries, addBasePath, formatUrl } from '#libs/js-utils'
+import {
+  isArray,
+  isNotBlank,
+  toArray,
+  valueToString,
+  objectEntries,
+  addBasePath,
+  formatUrl
+} from '#libs/js-utils'
 
 const WITH_DATA_METHOD = [ 'POST', 'PUT', 'PATCH' ]
 
@@ -25,7 +33,7 @@ function request(opts, input, requestParams) {
       contentType = 'application/x-www-form-urlencoded'
       body = param
     } else {
-      body = JSON.stringify(input)
+      body = valueToString(input)
     }
   }
 

@@ -32,7 +32,7 @@ export function isTrue(value) {
 }
 
 export function isInteger(value) {
-  return Number.isInteger(Number(value))
+  return Number.isInteger(+value)
 }
 
 export function isString(str) {
