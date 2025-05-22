@@ -169,7 +169,7 @@ export default class DOMHelper {
   }
 
   #appendElement(el, data, template) {
-    if (elementIs(el, [HTML_INPUT, HTML_SELECT])) {
+    if (!hasValue(template) && elementIs(el, [HTML_INPUT, HTML_SELECT])) {
       el.value = data
     } else {
       const elem = createTemplateHandler(template).getTemplate(data)
