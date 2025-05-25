@@ -5,10 +5,8 @@ import { createProperty } from '#libs/js-property-factory'
 export default class MiddlewareFactory {
 
   #middlewares
-  #debug
 
   constructor(opts = {}) {
-    this.#debug = isTrue(opts.debug)
     this.#middlewares = {
       debug: (...args) => console.log(...args),
       alert: input => alert(input.text),
@@ -45,7 +43,6 @@ export default class MiddlewareFactory {
       assert(isFunction(callback), `Could not find "${selectType}" in middlewares`)
       result.push({ callback, skip, params })
     }
-    this.#debug && result.push({ callback: this.#middlewares.debug })
     return wrapPromise(result)
   }
 }

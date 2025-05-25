@@ -139,14 +139,15 @@ export default class AjaxFormSubmit {
   static middleware = new MiddlewareFactory()
   static instance = createInstanceMap(
     el => elementIs(el, 'form') && hasClass(el, FORM_CLASS_NAME) && !hasClass(el, FORM_INIT_CLASS_NAME),
-    el => new AjaxFormSubmit(el))
+    root => new AjaxFormSubmit({ root }))
 
   #root
   #config
-  #with
   #datasetHelper
   #domHelper
+  #with
   #controls
+  #inputs
   #triggers
   #plugins
   #middlewares
@@ -154,19 +155,17 @@ export default class AjaxFormSubmit {
   #successHandler
   #resetHandler
 
-  constructor(root, opts = {}) {
-    this.#root = elementIs(root, 'form') ? root : document.createElement('form')
+  constructor(opts = {}) {
+    this.#root = elementIs(opts.root, 'form') ? opts.root : document.createElement('form')
     this.#root.noValidate = true
-    this.#config = createConfig(opts.config || {}, AjaxFormSubmit.config, DEFAULT_CONFIG)
-    this.#with = {}
-
-    const { prefix } = this.#config.get('prefix')
+    this.#config = this.#initConfig(opts.config)
+    
+    const { prefix, basePath } = this.#config.get(['prefix', 'basePath'])
     this.#datasetHelper = createDatasetHelper(prefix)
-    this.#readFormConfig()
-
-    const { basePath } = this.#config.get('basePath')
     this.#domHelper = new DOMHelper({ prefix, basePath })
+    this.#with = {}
     this.#controls = this.#initUIControls(opts.control)
+    this.#inputs = toArray(opts.input)
     this.#triggers = this.#initTriggers(opts.trigger)
     this.#plugins = this.#initPlugins(opts.plugin)
     this.#middlewares = opts.middleware || {}
@@ -196,30 +195,20 @@ export default class AjaxFormSubmit {
       .then(request => this.#handleRequest(request, options))
       .then(({ request, response }) => this.#handleResponse(request, response, options))
       .then(({ request, response }) => this.#handleAfter(request, response, options))
-      .catch(error => {
-        // TODO refactor handleError
-        switch (error?.message) {
-          case ERROR_VALIDATION:
-            break
-          case ERROR_CONFIRM:
-            this.#resetUIControls()
-            break
-          default:
-            this.#handleError(error, options)
-            throw error
-        }
-      })
+      .catch(error => this.#handleError(error, options))
   }
 
   submitSync(opts) {
     this.submit(opts).catch(_ => {})
   }
 
-  #readFormConfig() {
-    let instanceConfig = this.#config.getSource(0) || {}
-    for (const [key, [value] = values] of objectEntries(this.#datasetToProps('config'))) {
-      hasValue(value) && (instanceConfig[key] = value)
+  #initConfig(config = {}) {
+    const prefix = AjaxFormSubmit.config.prefix || DEFAULT_CONFIG.prefix
+    const props = createProperty(this.#root.dataset[`${prefix}Config`])[0]
+    for (const [key, [value] = values] of objectEntries(props)) {
+      hasValue(value) && (config[key] = value)
     }
+    return createConfig(config, AjaxFormSubmit.config, DEFAULT_CONFIG)
   }
 
   #initUIControls(controls = {}) {
@@ -258,7 +247,6 @@ export default class AjaxFormSubmit {
     })
     return result
   }
-
 
   #initPlugins(plugins = []) {
     assert(isArray(plugins), 1, ARRAY)
@@ -429,23 +417,32 @@ export default class AjaxFormSubmit {
   }
 
   #handleError(error, opts) {
-    console.error(error)
+    switch (error?.message) {
+      case ERROR_VALIDATION:
+        return
+      case ERROR_CONFIRM:
+        return this.#resetUIControls()
+    }
+
     const { getError } = this.#config.get(['response.getError'])
+    error = { ...error, message: getError(error) }
     this.#plugins.broadcast(EVENT_LIFECYCLE_AFTER, { error })
     triggerEvent(this.#controls.progress, EVENT_UPLOAD_STOP)
     this.#resetUIControls()
-    
-    const updatedError = { ...error, message: getError(error) }
-    const messageError = this.#controls.messageError
-    if (isArray(messageError) && messageError.length > 0) {
-      this.#getMiddleware('error', opts)(updatedError).then(result => {
-        //TODO ignore default handler if middleware break
-        messageError.forEach(elem => this.#domHelper.setValueToElement(elem, updatedError))
-        showElements(messageError)
+
+    return this.#getMiddleware('error', opts)(error)
+      .then(result => result ?? error)
+      .then(result => {
+        console.error(result)
+        const { messageError } = this.#controls
+        if (messageError.length > 0) {
+          messageError.forEach(elem => this.#domHelper.setValueToElement(elem, result))
+          showElements(messageError)
+        } else {
+          AjaxFormSubmit.middleware.get('error')?.(result)
+        }
+        throw result
       })
-    } else {
-      AjaxFormSubmit.middleware.get('error')?.(updatedError)
-    }
   }
 
   #handleProgress(event = {}) {
@@ -557,7 +554,8 @@ export default class AjaxFormSubmit {
   #queryFormInput(selector) {
     const inputs = [
       ...this.#root.elements,
-      ...querySelector(this.#datasetToProps('input').value)
+      ...querySelector(this.#datasetToProps('input').value),
+      ...querySelector(this.#inputs)
     ]
     return inputs.filter(el => !el.disabled && isNotBlank(el.name)).reduce((acc, el) => {
       if (isNotBlank(selector)) {
