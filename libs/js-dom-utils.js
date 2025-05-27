@@ -42,56 +42,52 @@ export function removeClass(el, classname) {
   split(classname).forEach(token => el.classList?.remove(token))
 }
 
-export function querySelector(selectors, el, withSelf = false) {
+export function querySelector(selectors, el, includeSelf = false) {
   const result = new Set()
-  const input = toArray(selectors)
-  let self = el
-  if (!isElement(el)) {
-    self = document
-    withSelf = false
-  }
+  const root = isElement(el) ? el : document
+  const includeRoot = includeSelf && root !== document
 
-  for (const selector of input) {
+  for (const selector of toArray(selectors)) {
     if (isElement(selector)) {
       result.add(selector)
     } else if (isNotBlank(selector)) {
       try {
-        if (withSelf && self.matches(selector))
-          result.add(self)
-        self.querySelectorAll(selector).forEach(elem => result.add(elem))
-      } catch(ignored) { }
+        includeRoot && root.matches(selector) && result.add(root)
+        root.querySelectorAll(selector).forEach(elem => result.add(elem))
+      } catch(_) { }
     }
   }
   return toArray(result)
 }
 
 export function getTargets(targets, el) {
-  const input = split(targets, ',')
   const result = new Set()
 
-  // TODO need finetune
-  input.forEach(target => {
-    if (target.startsWith('self') || target.startsWith('parent') || target.startsWith('peer')) {
-      let elems = [ el ].filter(isElement)
-      split(target, '.').forEach(pointer => {
-        if (pointer === 'parent') {
-          elems = elems.map(elem => elem.parentNode)
-        } else if (pointer === 'peer') {
-          elems = elems.map(elem => querySelector(`:scope>.peer`, elem.parentNode)).flat()
-        }
-      })
-      elems.forEach(elem => isElement(elem) && result.add(elem))
-    } else if (isElement(target)) {
+  for (const target of split(targets, ',')) {
+    if (isElement(target)) {
       result.add(target)
-    } else if (isNotBlank(target)) {
-      const elems = querySelector(target)
-      if (elems.length !== 0) {
-        elems.forEach(elem => result.add(elem))
-      } else {
-        console.warn(`Could not find element by selector "${target}"`)
-      }
+      continue
     }
-  })
+
+    let elems
+    for (const selector of split(target, ' ')) {
+      switch (selector) {
+        case 'self':
+          elems = (elems ?? [el])
+          break
+        case 'parent':
+          elems = (elems ?? [el]).map(elem => elem.parentElement)
+          break
+        case 'children':
+          elems = (elems ?? [el]).flatMap(elem => toArray(elem.children))
+          break
+        default:
+          elems = (elems ?? [document]).flatMap(elem => querySelector(selector, elem))
+      }
+      elems = elems.filter(isElement)
+    }
+    elems.forEach(elem => result.add(elem))
+  }
   return toArray(result)
 }
 

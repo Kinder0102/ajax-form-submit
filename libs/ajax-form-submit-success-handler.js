@@ -150,20 +150,20 @@ function handleDisplay() {
   const group = 'skeleton'
   return {
     before: (_, { target }, opts) => {
-      getTargets(target).forEach(el => {
+      getTargets(target, opts.root).forEach(el => {
         const props = createProperty(opts.datasetHelper.getValue(el, 'template'))[0]
         !opts.with?.includes('append') && !isTrue(props.append?.[0]) && opts.domHelper.clearElement(el)
       })
     },
-    request: ({ request }, { target }, { domHelper, datasetHelper }) => {
+    request: ({ request }, { target }, { root, domHelper, datasetHelper }) => {
       const mock = toArray({ length: request?.size || 1 }, () => ({}))
-      getTargets(target).forEach(el => {
+      getTargets(target, root).forEach(el => {
         const { skeleton: [template] = [] } = createProperty(datasetHelper.getValue(el, 'template'))[0]
         isNotBlank(template) && domHelper.setValueToElement(el, mock, { template, group })
       })
     },
-    after: (data, { target }, { domHelper, datasetHelper }) => {
-      getTargets(target).forEach(el => {
+    after: (data, { target }, { root, domHelper, datasetHelper }) => {
+      getTargets(target, root).forEach(el => {
         domHelper.clearElement(el, group)
         const key = datasetHelper.getValue(el, 'value')
         const { value, exist } = findObjectValue(data, key)
