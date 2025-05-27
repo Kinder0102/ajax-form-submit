@@ -300,6 +300,7 @@ function processNumber(input, valueTypeFormat) {
   return formatNumber(input, format['.']?.[0])
 }
 
+// TODO need refactor
 function processImage(inputs, valueTypeFormat) {
   const format = createProperty(valueTypeFormat)[0]
   const value = format.value[0]
@@ -307,50 +308,24 @@ function processImage(inputs, valueTypeFormat) {
   return inputs.map(input => isNotBlank(value) ? input.replace(pattern, `${value}$&`) : input)
 }
 
-function processEnum(enums, args = []) {
-  if (enums) {
-    const enumObj = createEnums(enums)
-    if (isArray(args)) {
-      return args.map(enumObj.get)
-    } else {
-      return enumObj.get(args)
-    }
-  } else {
+function processEnum(enumProps, args = []) {
+  if (!isNotBlank(enumProps))
     return args
-  }
-}
 
-// TODO need refactor
-function createEnums(props) {
   let enums = {}
-  const result = {
-    get: key => {
-      if (!isNotBlank(`${key}`))
-        return key
-      const result = enums[key] ?? enums['default'] ?? key
-      return isArray(result) ? result[0] : result
-    }
-  }
-
-  if (isNotBlank(props)) {
-    const globalValue = window?.[props]
-    if (isObject(globalValue)) {
-      enums = globalValue
-    } else {
-      const el = querySelector(props)[0]
-      if (isElement(el)) {
-        if (elementIs(el, HTML_INPUT)) {
-          enums ||= stringToValue(el.value)
-        } else if (elementIs(el, HTML_SELECT)) {
-          querySelector('option', el).forEach(elem => {
-            enums[elem.value] = elem.textContent
-          })
-        }
+  if (isObject(window[enumProps])) {
+    enums = window[enumProps]
+  } else {
+    const el = querySelector(enumProps)[0]
+    if (isElement(el)) {
+      if (hasValue(el.options)) {
+        toArray(el.options).forEach(({ value, text }) => (enums[value] = text))
       } else {
-        enums = createProperty(props)[0]
+        enums = stringToValue(el.value)
       }
+    } else {
+      enums = createProperty(enumProps)[0]
     }
   }
-
-  return result
+  return args.map(key => toArray(enums[key] ?? enums.default ?? key)[0])
 }
