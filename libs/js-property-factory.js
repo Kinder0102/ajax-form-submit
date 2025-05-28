@@ -30,7 +30,7 @@ export const createProperty = props => {
     } else if (isFunction(prop)) {
       return { type: [FUNCTION], value: [prop] }
     } else {
-      if (!PROPERTY_CACHE.has(prop)) {
+      return PROPERTY_CACHE.get(prop, () => {
         let result = { type: [], value: [] }
         split(prop, '|').forEach(token => {
           if (isURL(token)) {
@@ -42,51 +42,48 @@ export const createProperty = props => {
             isNotBlank(escapedKey) ? (result[escapedKey] = values) : result.value.push(...values)
           }
         })
-        PROPERTY_CACHE.set(prop, result)
-      }
-      return PROPERTY_CACHE.get(prop)
+        return result
+      })
     }
   })
 }
 
 export const createTemplateHandler = templateProp => {
-  if (TEMPLATE_CACHE.has(templateProp))
-    return TEMPLATE_CACHE.get(templateProp)
-
-  let handler = {}
-  if (isElement(templateProp)) {
-    handler.getTemplate = item => templateProp
-  } else if (!isNotBlank(templateProp)) {
-    handler.getTemplate = createDefaultTemplate
-  } else {
-    const props = createProperty(templateProp)[0]
-    const templateTags = querySelector('template').map(elem => elem.content)
-    const selectors = objectEntries(props).reduce((acc, [ key, values ]) => {
-      if (key.includes('.')) {
-        const [enumType, enumValue] = split(key, '.')
-        acc[enumType] ||= {}
-        acc[enumType][enumValue] = props[key][0]
-      }
-      return acc
-    }, {})
-
-    handler.getTemplate = item => {
-      let selector = props.value[0]
-      for (const [key, values] of objectEntries(selectors)) {
-        const { exist, value } = findObjectValue(item, key)
-        if (exist && hasValue(values[value])) {
-          selector = values[value]
-          break
+  return TEMPLATE_CACHE.get(templateProp, () => {
+    let handler = {}
+    if (isElement(templateProp)) {
+      handler.getTemplate = item => templateProp
+    } else if (!isNotBlank(templateProp)) {
+      handler.getTemplate = createDefaultTemplate
+    } else {
+      const props = createProperty(templateProp)[0]
+      const templateTags = querySelector('template').map(elem => elem.content)
+      const selectors = objectEntries(props).reduce((acc, [ key, values ]) => {
+        if (key.includes('.')) {
+          const [enumType, enumValue] = split(key, '.')
+          acc[enumType] ||= {}
+          acc[enumType][enumValue] = props[key][0]
         }
+        return acc
+      }, {})
+
+      handler.getTemplate = item => {
+        let selector = props.value[0]
+        for (const [key, values] of objectEntries(selectors)) {
+          const { exist, value } = findObjectValue(item, key)
+          if (exist && hasValue(values[value])) {
+            selector = values[value]
+            break
+          }
+        }
+        let result = templateTags.map(tag => querySelector(selector, tag)).flat()[0]?.cloneNode?.(true)
+        result ||= createDefaultTemplate(item)
+        result.removeAttribute?.('id')
+        return result
       }
-      let result = templateTags.map(tag => querySelector(selector, tag)).flat()[0]?.cloneNode?.(true)
-      result ||= createDefaultTemplate(item)
-      result.removeAttribute?.('id')
-      return result
     }
-  }
-  TEMPLATE_CACHE.set(templateProp, handler)
-  return handler
+    return handler
+  })
 }
 
 export const createFilter = filterProp => {
@@ -118,11 +115,7 @@ function createDefaultTemplate(data) {
 class Comparable {
   static OPERATORS = ['=~', '==', '!=', '>=', '<=', '>', '<', '=']
   static NOT_PREFIX = /^!/
-  static create = prop => {
-    if (!FILTER_CACHE.has(prop))
-      FILTER_CACHE.set(prop, new Comparable(prop))
-    return FILTER_CACHE.get(prop)
-  }
+  static create = prop => FILTER_CACHE.get(prop, (key) => new Comparable(key))
 
   constructor(prop) {
     this.key = prop

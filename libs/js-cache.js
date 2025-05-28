@@ -1,11 +1,18 @@
 import { HTML_ELEMENT } from '#libs/js-constant'
-import { assert, isFunction, isElement } from '#libs/js-utils'
+import { assert, isFunction, isElement, hasValue } from '#libs/js-utils'
 
 export function createCache() {
   const cache = new Map()
   return {
-    has: key => cache.has(key),
-    get: key => cache.get(key),
+    get: (key, initialize) => {
+      if (cache.has(key)) {
+        return cache.get(key)
+      } else {
+        const result = isFunction(initialize) ? initialize(key) : initialize
+        hasValue(result) && cache.set(key, result)
+        return result
+      }
+    },
     set: (key, value) => isFunction(value) ? cache.set(key, value(cache.get(key))) : cache.set(key, value),
   }
 }
@@ -15,11 +22,8 @@ export function createInstanceMap(conditionCallback, createCallback) {
   return {
     create: (el) => {
       assert(isElement(el), 1, HTML_ELEMENT)
-      if (!conditionCallback(el))
-        return
-      if (!instanceMap.has(el))
-        instanceMap.set(el, createCallback(el))
-      return instanceMap.get(el)
+      if (conditionCallback(el))
+        instanceMap.get(el, createCallback)
     },
     get: el => {
       assert(isElement(el), 1, HTML_ELEMENT)
