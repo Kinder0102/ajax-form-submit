@@ -45,25 +45,25 @@ const TEMPLATE_KEY = 'template'
 const ELEMENT_CACHE = createCache()
 
 let SET_VALUE_HANDLERS = {
-  input: (el, value, props) => el.type === HTML_CHECKBOX ? (el.checked = isTrue(value)) : (el.value = value),
-  select: (el, value, props) => el.value = value,
-  a: (el, value, props) => el.setAttribute('href', addBasePath(value, props.basePath)),
-  img: (el, value, props) => el.setAttribute('src', value),
-  iframe: (el, value, props) => el.setAttribute('src', value),
-  object: (el, value, props) => el.setAttribute('data', value),
-  form: (el, value, props) => el.setAttribute('action', addBasePath(value, props.basePath)),
+  input: (el, value) => el.type === HTML_CHECKBOX ? (el.checked = isTrue(value)) : (el.value = value),
+  select: (el, value) => el.value = value,
+  img: (el, value) => el.src = value,
+  iframe: (el, value) => el.src = value,
+  object: (el, value) => el.data = value,
+  source: (el, value) => el.srcset = value,
+  a: (el, value, props) => el.href = addBasePath(value, props.basePath),
+  form: (el, value, props) => el.action = addBasePath(value, props.basePath),
   fallback: (el, value) => el.textContent = value
 }
 
 let GENERATE_VALUE_HANDLERS = {
   date: (values, { format, valueTypeFormat }) =>
     formatString(format, values.map(value => formatDate(value, valueTypeFormat))),
-  string: (values, { format, enums }) =>
-    formatString(format, processEnum(enums, values)),
-  image: (values, { format, enums }) =>
-    formatString(format, processEnum(enums, processImage(values, valueTypeFormat))),
+  string: (values, { format, enums, valueTypeFormat }) =>
+    formatString(format, processEnum(enums, replaceString(values, valueTypeFormat))),
   number: (values, { format, enums, valueTypeFormat }) =>
-    formatString(format, processEnum(enums, processNumber(values.reduce((a, b) => a + Number(b), 0), valueTypeFormat))),
+    formatString(format, processEnum(enums,
+      processNumber(values.reduce((a, b) => a + Number(b), 0), valueTypeFormat))),
   percentage: (values, { format, enums }) =>
     processEnum(enums, `${formatNumber((values.reduce((a, b) => a + Number(b), 0) * 100), format)}%`),
   fallback: (values, props) => processEnum(props.enums, values).join()
@@ -222,7 +222,6 @@ export default class DOMHelper {
   }
 
   #setAttr(el, value, arrayValues, attrName) {
-    //TODO attr case insensitive
     let tag = attrName.replace('attr-', '')
     const { getValue } = this.#datasetHelper
     const valueFormat = this.#generateValue(value, {
@@ -232,17 +231,9 @@ export default class DOMHelper {
       enums: getValue(el, `attr-${tag}-enum`)
     })
 
-    if (!hasValue(valueFormat))
-      return
-
-    if (!tag.includes('data-'))
-      tag = toCamelCase(tag)
-
-    if (ATTR_BOOLEAN_KEYS.includes(tag)) {
-      if (isTrue(valueFormat))
-        el.toggleAttribute(tag)
-    } else {
-      el.setAttribute(tag, valueFormat)
+    if (hasValue(valueFormat)) {
+      !tag.includes('data-') && (tag = toCamelCase(tag))
+      el.setAttribute(tag, ATTR_BOOLEAN_KEYS.includes(tag) ? isTrue(valueFormat) : valueFormat)
     }
   }
 
@@ -291,6 +282,13 @@ function reduceFilter(data, props) {
   }, true)
 }
 
+function replaceString(inputs, valueTypeFormat) {
+  const format = createProperty(valueTypeFormat)[0]
+  const value = format.value[0]
+  const pattern = new RegExp(format.pattern?.[0] ?? /\.\w+$/, 'gi')
+  return inputs.map(input => isNotBlank(value) ? input.replace(pattern, value) : input)
+}
+
 function processNumber(input, valueTypeFormat) {
   const format = createProperty(valueTypeFormat)[0]
   format['*']?.forEach(value => input *= value)
@@ -298,14 +296,6 @@ function processNumber(input, valueTypeFormat) {
   format['+']?.forEach(value => input += value)
   format['-']?.forEach(value => input -= value)
   return formatNumber(input, format['.']?.[0])
-}
-
-// TODO need refactor
-function processImage(inputs, valueTypeFormat) {
-  const format = createProperty(valueTypeFormat)[0]
-  const value = format.value[0]
-  const pattern = format.pattern?.[0] || /\.\w+$/
-  return inputs.map(input => isNotBlank(value) ? input.replace(pattern, `${value}$&`) : input)
 }
 
 function processEnum(enumProps, args = []) {
