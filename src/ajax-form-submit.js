@@ -172,8 +172,6 @@ export default class AjaxFormSubmit {
     this.#submitHandler = this.#initSubmitHandler()
     this.#successHandler = this.#initSuccessHandler(opts.success)
     this.#resetHandler = new ResetHandler(this.#root)
-
-    // TODO could't found when successHandler property in opts
     this.#resetHandler.add('empty', this.#successHandler.before)
     this.#initAutoSubmit()
 

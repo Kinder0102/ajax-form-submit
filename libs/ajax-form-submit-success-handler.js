@@ -13,6 +13,7 @@ import {
   toArray,
   startsWith,
   objectKeys,
+  objectEntries,
   valueToString,
   findObjectValue,
   addBasePath
@@ -46,17 +47,17 @@ export default class AjaxFormSubmitSuccessHandler {
   static add = addHandler
 
   #payload
-  #defaultProps
+  #handlerProps
   
   constructor(opts = {}) {
     const { handlerProps, ...rest } = opts
     const datasetHelper = createDatasetHelper(opts.prefix)
     this.#payload = { datasetHelper, ...rest }
-    this.#defaultProps = handlerProps || {}
+    this.#handlerProps = handlerProps || {}
     datasetHelper.getKeys(opts.root, ATTR_KEY).forEach(({ key, name }) => {
       const props = datasetHelper.getValue(opts.root, key, '')
-      const current = this.#defaultProps[name]
-      this.#defaultProps[name] = hasValue(current) ? [...toArray(current), props] : props
+      const current = this.#handlerProps[name]
+      this.#handlerProps[name] = hasValue(current) ? [...toArray(current), props] : props
     })
     
     for (const lifecycle of LIFECYCLES) {
@@ -65,21 +66,17 @@ export default class AjaxFormSubmitSuccessHandler {
   }
 
   #run(lifecycle, opts, data) {
-    const types = new Set(objectKeys(this.#defaultProps))
-    objectKeys(opts.property || {}).forEach(type => {
+    objectEntries(opts.property || {}).forEach(([type, props]) => {
       const { exist, value } = startsWith(type, `${ATTR_KEY}-`)
-      exist && types.add(value)
+      exist && (this.#handlerProps[value] = props)
     })
 
-    for (const type of types) {
+    for (const [type, value] of objectEntries(this.#handlerProps)) {
       const handler = HANDLERS[type]?.[lifecycle.name]
       lifecycle.required && assert(isFunction(handler), `Could not find "${type}" in successHandler`)
 
-      const payloadProps = opts.property?.[`${ATTR_KEY}-${type}`]
-      const defaultProps = this.#defaultProps[type]
-      // TODO props from opts
-      createProperty([defaultProps, payloadProps].flat())
-        .forEach(props => handler?.(data, props, { ...this.#payload, ...opts }))
+      // TODO merge props from opts
+      createProperty(value).forEach(props => handler?.(data, props, { ...this.#payload, ...opts }))
     }
   }
 }
