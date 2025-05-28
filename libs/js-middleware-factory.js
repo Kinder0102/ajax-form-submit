@@ -6,7 +6,7 @@ export default class MiddlewareFactory {
 
   #middlewares
 
-  constructor(opts = {}) {
+  constructor() {
     this.#middlewares = {
       debug: (...args) => console.log(...args),
       alert: input => alert(input.text),
@@ -32,7 +32,7 @@ export default class MiddlewareFactory {
     return this.#middlewares[name]
   }
 
-  create(props) {
+  create(props, opts = {}) {
     let result = []
     for (const prop of createProperty(props)) {
       const { type: [selectType], skip: skipProps, value, ...params } = prop
@@ -43,23 +43,23 @@ export default class MiddlewareFactory {
       assert(isFunction(callback), `Could not find "${selectType}" in middlewares`)
       result.push({ callback, skip, params })
     }
-    return wrapPromise(result)
+    return wrapPromise(result, opts)
   }
 }
 
-function wrapPromise(callbacks) {
+function wrapPromise(callbacks, opts) {
   return async function() {
     let arg = arguments[0]
     let updatedArg = arg
     let promise = Promise.resolve(arg)
     try {
       for (const { callback, skip, params } of callbacks) {
-        const shouldSkip = await skip?.apply(this, [ params, updatedArg ])
+        const shouldSkip = await skip?.apply(this, [ params, updatedArg, opts ])
         if (shouldSkip)
           continue
         promise = promise.then(result => {
           isObject(result) && (updatedArg = result)
-          return callback.apply(this, [ params, updatedArg ])
+          return callback.apply(this, [ params, updatedArg, opts ])
         })
       }
 

@@ -299,11 +299,10 @@ export default class AjaxFormSubmit {
     formSubmitAuto.all.push(this)
   }
 
-  // TODO finetune middleware args
   // TODO implement abortable
   #handleBefore(request, opts) {
     return this.#plugins.ready()
-      .then(() => this.#getMiddleware('before', opts)({ request, root: this.#root }))
+      .then(() => this.#getMiddleware('before', opts)({ request }))
       .then(result => hasValue(result?.request) ? result.request : request)
       .then(result => {
         const data = { request: result }
@@ -315,7 +314,7 @@ export default class AjaxFormSubmit {
   }
 
   #handleValidation(request, opts) {
-    const fields = new Set()
+    const validation = new Set()
     const attrName = this.#datasetHelper.keyToAttrName('validation')
     const groups = this.#queryFormInput(`[${attrName}][required]`).reduce((acc, input) => {
       input.setCustomValidity('')
@@ -334,22 +333,23 @@ export default class AjaxFormSubmit {
     }
 
     this.#queryFormInput().forEach(el => {
-      !el.validity.valid && fields.add(el.name)
+      !el.validity.valid && validation.add(el.name)
       el.disabled = false
     })
     
-    //TODO middleware validation
-    return this.#getMiddleware('validation', opts)({ request, root: this.#root }).then(result => {
-      toArray(result).filter(isNotBlank).forEach(fields.add, fields)
+    return this.#getMiddleware('validation', opts)({ request, validation })
+      .then(result => toArray(result?.validation).filter(isNotBlank))
+      .then(result => {
+        result.forEach(validation.add, validation)
 
-      if (fields.size > 0) {
-        this.#root.reportValidity()
-        this.#plugins.broadcast(EVENT_LIFECYCLE_INVALID)
-        showElements(this.#controls.messageValidation)
-        throw new Error(ERROR_VALIDATION)
-      }
-      return request
-    })
+        if (validation.size > 0) {
+          this.#root.reportValidity()
+          this.#plugins.broadcast(EVENT_LIFECYCLE_INVALID)
+          showElements(this.#controls.messageValidation)
+          throw new Error(ERROR_VALIDATION)
+        }
+        return request
+      })
   }
 
   #handleRequest(request, opts) {
@@ -371,7 +371,7 @@ export default class AjaxFormSubmit {
     hideElements(this.#controls.hide)
 
     return delay(this.#config.get('delay').delay)
-      .then(() => this.#getMiddleware('request', opts)({ request, root: this.#root}))
+      .then(() => this.#getMiddleware('request', opts)({ request }))
       .then(result => hasValue(result?.request) ? result.request : request)
       .then(result => {
         const data = { request: result }
@@ -385,7 +385,7 @@ export default class AjaxFormSubmit {
   #handleResponse(request, response, opts) {
     const { checkResponse } = this.#config.get('response.checkResponse')
 
-    return this.#getMiddleware('response', opts)({ request, response, root: this.#root})
+    return this.#getMiddleware('response', opts)({ request, response })
       .then(result => hasValue(result?.response) ? result.response : response)
       .then(result => checkResponse(result) ? result : Promise.reject(result))
       .then(result => {
@@ -401,7 +401,7 @@ export default class AjaxFormSubmit {
   #handleAfter(request, response, opts) {
     const { getData, getPage } = this.#config.get(['response.getData', 'response.getPage'])
 
-    return this.#getMiddleware('after', opts)({ request, response, root: this.#root}).then(_ => {
+    return this.#getMiddleware('after', opts)({ request, response }).then(_ => {
       const data = {
         request,
         response: getData(response),
@@ -536,7 +536,7 @@ export default class AjaxFormSubmit {
     const attrName = `middleware-${lifecycle}`
     const middleware = opts.property?.[attrName] ?? this.#middlewares?.[lifecycle]
     const props = this.#datasetHelper.getValue(this.#root, attrName, middleware)
-    return AjaxFormSubmit.middleware.create(props)
+    return AjaxFormSubmit.middleware.create(props, { root: this.#root })
   }
 
   #resetUIControls() {
