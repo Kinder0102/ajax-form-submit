@@ -67,6 +67,7 @@ const EVENT_LIFECYCLE_REQUEST = `${FORM_CLASS_NAME}:request`
 const EVENT_LIFECYCLE_RESPONSE = `${FORM_CLASS_NAME}:response`
 const EVENT_LIFECYCLE_AFTER = `${FORM_CLASS_NAME}:after`
 const EVENT_LIFECYCLE_ERROR = `${FORM_CLASS_NAME}:error`
+const EVENT_ABORT = `${FORM_CLASS_NAME}:abort`
 const EVENT_APPLY = `${FORM_CLASS_NAME}:apply`
 const EVENT_TRIGGER = `${FORM_CLASS_NAME}:trigger`
 const EVENT_PAGE_UPDATE = `${FORM_CLASS_NAME}:page-update`
@@ -154,6 +155,7 @@ export default class AjaxFormSubmit {
   #submitHandler
   #successHandler
   #resetHandler
+  #abortController
 
   constructor(opts = {}) {
     this.#root = elementIs(opts.root, 'form') ? opts.root : document.createElement('form')
@@ -174,7 +176,7 @@ export default class AjaxFormSubmit {
     this.#resetHandler = new ResetHandler(this.#root)
     this.#resetHandler.add('empty', this.#successHandler.before)
     this.#initAutoSubmit()
-
+    
     registerEvent(this.#root, EVENT_SUBMIT, event => {
       stopDefaultEvent(event)
       this.submitSync()
@@ -183,11 +185,17 @@ export default class AjaxFormSubmit {
     registerEvent(this.#root, EVENT_TRIGGER, this.#handleEventTriggered.bind(this))
     registerEvent(this.#root, EVENT_PAGE_UPDATE, this.#handleEventPageUpdate.bind(this))
     registerEvent(this.#root, EVENT_RESET, this.#handleEventReset.bind(this))
+    registerEvent(this.#root, EVENT_ABORT, () => this.#abortController?.abort())
+    registerEvent(querySelector(`.${FORM_CLASS_NAME}-abort`, this.#root),
+      'click', () => this.#abortController?.abort())
     addClass(this.#root, FORM_INIT_CLASS_NAME)
   }
 
   submit(opts = {}) {
     const { data, ...options } = { ...opts, ...this.#generateDataAndProps(opts.with)}
+    this.#abortController = new AbortController()
+    options.signal = this.#abortController.signal
+
     return this.#handleBefore(data, options)
       .then(request => this.#handleValidation(request, options))
       .then(request => this.#handleRequest(request, options))
@@ -299,7 +307,6 @@ export default class AjaxFormSubmit {
     formSubmitAuto.all.push(this)
   }
 
-  // TODO implement abortable
   #handleBefore(request, opts) {
     return this.#plugins.ready()
       .then(() => this.#getMiddleware('before', opts)({ request }))
@@ -415,6 +422,7 @@ export default class AjaxFormSubmit {
   }
 
   #handleError(error, opts) {
+    console.error(error)
     switch (error?.message) {
       case ERROR_VALIDATION:
         return
@@ -431,7 +439,6 @@ export default class AjaxFormSubmit {
     return this.#getMiddleware('error', opts)(error)
       .then(result => result ?? error)
       .then(result => {
-        console.error(result)
         const { messageError } = this.#controls
         if (messageError.length > 0) {
           messageError.forEach(elem => this.#domHelper.setValueToElement(elem, result))
@@ -536,7 +543,10 @@ export default class AjaxFormSubmit {
     const attrName = `middleware-${lifecycle}`
     const middleware = opts.property?.[attrName] ?? this.#middlewares?.[lifecycle]
     const props = this.#datasetHelper.getValue(this.#root, attrName, middleware)
-    return AjaxFormSubmit.middleware.create(props, { root: this.#root })
+    return AjaxFormSubmit.middleware.create(props, {
+      root: this.#root,
+      signal: opts.signal
+    })
   }
 
   #resetUIControls() {
@@ -641,37 +651,6 @@ export default class AjaxFormSubmit {
     }
   }
 }
-
-// function setNestedValue(obj, name, value) {
-//   if (!hasValue(value))
-//     return
-
-//   const keys = name.replace(/\[(\d*)\]/g, (_, i) => i ? `.${i}` : '.[]').split('.')
-//   keys.reduce((acc, key, index) => {
-//     if (index === keys.length - 1) {
-//       if (key === '[]') {
-//         if (!isArray(acc))
-//           acc = []
-//         acc.push(...toArray(value))
-//       } else if (hasValue(acc[key])) {
-//         if (!isArray(acc[key]))
-//           acc[key] = [acc[key]]
-//         acc[key].push(value)
-//       } else {
-//         acc[key] = value
-//       }
-//     } else {
-//       if (key === '[]') {
-//         if (!isArray(acc))
-//           acc[key] = []
-//       } else if (!acc[key]) {
-//         const nextKey = keys[index + 1]
-//         acc[key] = /^\d+$/.test(nextKey) || nextKey === '[]' ? [] : {}
-//       }
-//     }
-//     return acc[key]
-//   }, obj)
-// }
 
 function setNestedValue(obj, name, value) {
   if (!isObject(obj))

@@ -1,5 +1,5 @@
 import { STRING_NON_BLANK, FUNCTION, ERROR_CONFIRM } from '#libs/js-constant'
-import { assert, toArray, isObject, isFunction, isPromise, isNotBlank, isTrue } from '#libs/js-utils'
+import { assert, toArray, isObject, isFunction, isPromise, isNotBlank, isTrue, abortable } from '#libs/js-utils'
 import { createProperty } from '#libs/js-property-factory'
 
 export default class MiddlewareFactory {
@@ -51,7 +51,7 @@ function wrapPromise(callbacks, opts) {
   return async function() {
     let arg = arguments[0]
     let updatedArg = arg
-    let promise = Promise.resolve(arg)
+    let promise = abortable(() => Promise.resolve(arg), opts)
     try {
       for (const { callback, skip, params } of callbacks) {
         const shouldSkip = await skip?.apply(this, [ params, updatedArg, opts ])
@@ -59,7 +59,7 @@ function wrapPromise(callbacks, opts) {
           continue
         promise = promise.then(result => {
           isObject(result) && (updatedArg = result)
-          return callback.apply(this, [ params, updatedArg, opts ])
+          return abortable(() => callback.apply(this, [params, updatedArg, opts]), opts)
         })
       }
 

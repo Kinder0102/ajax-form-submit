@@ -315,6 +315,20 @@ export function throttle(callback, wait = 200, { leading = true, trailing = true
   }
 }
 
+export function abortable(promiseFn, { signal } = {}) {
+  if (signal?.aborted)
+    return Promise.reject(new DOMException('Operation aborted', 'AbortError'))
+
+  const originalPromise = promiseFn()
+  const abortPromise = new Promise((_, reject) => {
+    signal?.addEventListener('abort', () => {
+      reject(new DOMException('Operation aborted', 'AbortError'))
+    }, { once: true })
+  })
+
+  return Promise.race([originalPromise, abortPromise])
+}
+
 function checkPrefixOrSuffix(str, mark, isStart) {
   assert(isNotBlank(mark), 2, STRING_NON_BLANK)
 
