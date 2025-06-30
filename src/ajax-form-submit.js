@@ -114,9 +114,9 @@ const DEFAULT_CONFIG = {
     getData: res => res?.data?.item,
     getPage: res => res?.data?.page,
     getError: (error = {}) => (
-      (AjaxFormSubmit.config.i18n?.code?.[error.code] || error.code) ||
-      (AjaxFormSubmit.config.i18n?.status?.[error.status] || error.status) ||
-      error.message || error
+      AjaxFormSubmit.config.i18n?.code?.[error.code] ||
+      AjaxFormSubmit.config.i18n?.status?.[error.status] ||
+      error.message || error.code || error.status || error
     )
   },
   getCsrfToken: () => ({
