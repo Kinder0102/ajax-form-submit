@@ -5,7 +5,7 @@ import {
   valueToString,
   objectEntries,
   addBasePath,
-  formatUrl
+  formatString
 } from '#libs/js-utils'
 
 const WITH_DATA_METHOD = [ 'POST', 'PUT', 'PATCH' ]
@@ -21,7 +21,7 @@ function request(opts, input, requestParams) {
     .map(([key, value]) => `${encodeURIComponent(key.replace(/\[\]$/, ''))}=${encodeURIComponent(value)}`)
     .join('&')
   const urlParam = isWithDataMethod ? '' :  `?${param}`
-  const processedUrl = addBasePath(`${formatUrl(url, input)}${urlParam}`, basePath)
+  const processedUrl = addBasePath(`${formatString(url, input)}${urlParam}`, basePath)
 
   let contentType = 'application/json;charset=utf-8'
   let body = null

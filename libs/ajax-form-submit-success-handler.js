@@ -1,7 +1,7 @@
 import { OBJECT, FUNCTION, STRING_NON_BLANK } from '#libs/js-constant'
 import {
   assert,
-  formatUrl,
+  formatString,
   hasValue,
   isTrue,
   isArray,
@@ -126,7 +126,7 @@ function handleRedirect({ request, response }, { target, type, param }, { basePa
         location.reload()
       } else {
         const outputObj = isObject(response) ? response : { value: response }
-        url = addBasePath(formatUrl(formatUrl(target[0], request), outputObj), basePath)
+        url = addBasePath(formatString(formatString(target[0], request), outputObj), basePath)
         let params = new URLSearchParams()
         param?.forEach?.(key => {
           const inputValue = findObjectValue(request, key)

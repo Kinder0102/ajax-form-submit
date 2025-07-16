@@ -193,12 +193,21 @@ export function formatNumber(value, n, x) {
   return value.toFixed(Math.max(0, ~~n)).replace(new RegExp(re, 'g'), '$&,')
 }
 
-export function formatString(str, args) {
-  const param = toArray(args)
-  if (isNotBlank(str)) {
-    return str.replace(/{(\d+)}/g, (match, number) => hasValue(param[number]) ? param[number] : '')
+export function formatString(template, args) {
+  if (isNotBlank(template)) {
+    return template.replace(/{([^}]+)}/g, (_, key) => {
+      let result
+      if (isObject(args)) {
+        const { exist, value } = findObjectValue(args, key)
+        exist && (result = value)
+      } else {
+        const param = toArray(args)
+        result = param[Number(key)]
+      }
+      return hasValue(result) ? result : ''
+    })
   } else {
-    return param.join()
+    return isObject(args) ? JSON.stringify(args) : toArray(args).join()
   }
 }
 
@@ -222,22 +231,6 @@ export function formatDate(value, format = 'yyyy/MM/dd') {
   for (const [k, v] of objectEntries(dateValues))
     if (new RegExp(`(${k})`).test(result))
       result = result.replace(RegExp.$1, (RegExp.$1.length === 1) ? v : (`00${v}`.substr(`${v}`.length)))
-  return result
-}
-
-export function formatUrl(url, parameters) {
-  if (!isNotBlank(url) || !isObject(parameters))
-    return url
-  
-  let result = url
-  for (const [attribute, value] of objectEntries(parameters)) {
-    if (isObject(value)) {
-      result = formatUrl(result, value)
-    } else if (hasValue(value)) {
-      const pattern = new RegExp(`\{${attribute}\}`, 'gi');
-      result = result.replaceAll(pattern, value)
-    }
-  }
   return result
 }
 

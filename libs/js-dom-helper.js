@@ -216,8 +216,11 @@ export default class DOMHelper {
   }
 
   #setClass(el, value, arrayValues) {
-    const enums = this.#datasetHelper.getValue(el, 'class-enum')
-    const valueFormat = this.#generateValue(value, { enums })
+    const { getValue } = this.#datasetHelper
+    const valueFormat = this.#generateValue(value, {
+      format: getValue(el, `class-format`),
+      enums: getValue(el, 'class-enum')
+    })
     split(valueFormat).filter(isNotBlank).forEach(value => addClass(el, value))
   }
 

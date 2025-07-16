@@ -195,6 +195,7 @@ export default class AjaxFormSubmit {
     const { data, ...options } = { ...opts, ...this.#generateDataAndProps(opts.with)}
     this.#abortController = new AbortController()
     options.signal = this.#abortController.signal
+    options.id = crypto.randomUUID()
 
     return this.#handleBefore(data, options)
       .then(request => this.#handleValidation(request, options))
