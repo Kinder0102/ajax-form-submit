@@ -68,7 +68,7 @@ export function toArray(value, mapFn, thisArg) {
     return []
   } else if (isArray(value)) {
     return value.filter(hasValue)
-  } else if (!isString(value) && !(isElement(value)) && isFunction(value[Symbol.iterator])) {
+  } else if (!isString(value) && !(isElement(value)) && (isFunction(value[Symbol.iterator]) || value.length)) {
     return Array.from(value, mapFn, thisArg).filter(hasValue)
   } else {
     return [ value ]
