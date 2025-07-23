@@ -25,14 +25,7 @@ import { createProperty } from '#libs/js-property-factory'
 
 const ATTR_KEY = 'success'
 const HANDLERS = {}
-const LIFECYCLES = [
-  { name: 'before' },
-  { name: 'validation' },
-  { name: 'request' },
-  { name: 'response' },
-  { name: 'after', required: true },
-  { name: 'error' },
-]
+const LIFECYCLES = [ 'before', 'validation', 'request', 'response', 'after', 'error' ]
 
 addHandler('redirect', handleRedirect)
 addHandler('show', handleShow)
@@ -61,7 +54,7 @@ export default class AjaxFormSubmitSuccessHandler {
     })
     
     for (const lifecycle of LIFECYCLES) {
-      this[lifecycle.name] = (opts, data) => this.#run(lifecycle, opts, data)
+      this[lifecycle] = (opts, data) => this.#run(lifecycle, opts, data)
     }
   }
 
@@ -72,8 +65,7 @@ export default class AjaxFormSubmitSuccessHandler {
     })
 
     for (const [type, value] of objectEntries(this.#handlerProps)) {
-      const handler = HANDLERS[type]?.[lifecycle.name]
-      lifecycle.required && assert(isFunction(handler), `Could not find "${type}" in successHandler`)
+      const handler = HANDLERS[type]?.[lifecycle]
 
       // TODO merge props from opts
       createProperty(value).forEach(props => handler?.(data, props, { ...this.#payload, ...opts }))
@@ -86,9 +78,8 @@ function addHandler(type, callback) {
   if (isFunction(callback)) {
     HANDLERS[type] = { after: callback }
   } else if (isObject(callback)) {
-    HANDLERS[type] = LIFECYCLES.reduce((acc, { name, required }) => {
-      isFunction(callback[name]) && (acc[name] = callback[name])
-      required && assert(hasValue(acc[name]), `handler.${name} must be Function`)
+    HANDLERS[type] = LIFECYCLES.reduce((acc, lifecycle) => {
+      isFunction(callback[lifecycle]) && (acc[lifecycle] = callback[lifecycle])
       return acc
     }, {})
   } else {
@@ -159,7 +150,7 @@ function handleDisplay() {
         isNotBlank(template) && domHelper.setValueToElement(el, mock, { template, group })
       })
     },
-    after: (data, { target }, { root, domHelper, datasetHelper }) => {
+    response: (data, { target }, { root, domHelper, datasetHelper }) => {
       getTargets(target, root).forEach(el => {
         domHelper.clearElement(el, group)
         const key = datasetHelper.getValue(el, 'value')

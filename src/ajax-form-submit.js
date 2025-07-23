@@ -201,7 +201,7 @@ export default class AjaxFormSubmit {
       .then(request => this.#handleValidation(request, options))
       .then(request => this.#handleRequest(request, options))
       .then(({ request, response }) => this.#handleResponse(request, response, options))
-      .then(({ request, response }) => this.#handleAfter(request, response, options))
+      .then(data => this.#handleAfter(data, options))
       .catch(error => this.#handleError(error, options))
   }
 
@@ -391,13 +391,21 @@ export default class AjaxFormSubmit {
   }
 
   #handleResponse(request, response, opts) {
-    const { checkResponse } = this.#config.get('response.checkResponse')
+    const { getData, getPage, checkResponse } = this.#config.get([
+      'response.getData',
+      'response.getPage',
+      'response.checkResponse',
+    ])
 
     return this.#getMiddleware('response', opts)({ request, response })
       .then(result => hasValue(result?.response) ? result.response : response)
       .then(result => checkResponse(result) ? result : Promise.reject(result))
       .then(result => {
-        const data = { request, response: result }
+        const data = {
+          request,
+          response: getData(result),
+          page: getPage(result)
+        }
         this.#plugins.broadcast(EVENT_LIFECYCLE_RESPONSE, data)
         triggerEvent(this.#controls.progress, EVENT_UPLOAD_STOP)
         this.#resetUIControls()
@@ -406,15 +414,8 @@ export default class AjaxFormSubmit {
       })
   }
 
-  #handleAfter(request, response, opts) {
-    const { getData, getPage } = this.#config.get(['response.getData', 'response.getPage'])
-
-    return this.#getMiddleware('after', opts)({ request, response }).then(_ => {
-      const data = {
-        request,
-        response: getData(response),
-        page: getPage(response)
-      }
+  #handleAfter(data, opts) {
+    return this.#getMiddleware('after', opts)(data).then(_ => {
       this.#plugins.broadcast(EVENT_LIFECYCLE_AFTER, data)
       showElements(this.#controls.messageSuccess)
       this.#successHandler.after(opts, data)
