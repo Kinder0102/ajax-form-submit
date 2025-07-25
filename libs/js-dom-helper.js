@@ -141,7 +141,7 @@ export default class DOMHelper {
     const result = []
     const { getValue, setValue, keyToDatasetName } = this.#datasetHelper
 
-    if (keyToDatasetName('array-length') in el.dataset) {
+    if (el.dataset && keyToDatasetName('array-length') in el.dataset) {
       this.#setValue(el, arr.length)
       return result
     }

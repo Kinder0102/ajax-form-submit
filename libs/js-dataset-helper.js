@@ -45,7 +45,7 @@ export function createDatasetHelper(prefix = '') {
   }
   const setValue = (el, key, value) => {
     assert(isElement(el), 1, HTML_ELEMENT)
-    el.dataset[keyToDatasetName(key)] = value
+    el.dataset && (el.dataset[keyToDatasetName(key)] = value)
   }
 
   return {
