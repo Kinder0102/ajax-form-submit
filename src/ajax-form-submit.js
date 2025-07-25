@@ -463,7 +463,7 @@ export default class AjaxFormSubmit {
 
   #handleEventApplied(event) {
     stopDefaultEvent(event)
-    const withProps = {}
+    this.#with.apply ||= {}
     const attrName = this.#datasetHelper.keyToAttrName('applied')
     const selectors = new Map()
     const payload = {
@@ -484,10 +484,9 @@ export default class AjaxFormSubmit {
     selectors.forEach((value, selector) => this.#queryFormInput(selector).forEach(el => {
       const toProps = this.#datasetToProps('to', el)
       const toType = toProps.type[0] ?? toProps?.value[0] ?? 'data'
-      withProps[toType] ||= {}
-      withProps[toType][el.name] = value
+      this.#with.apply[toType] ||= {}
+      this.#with.apply[toType][el.name] = value
     }))
-    this.#with.apply = withProps
   }
 
   #handleEventTriggered(event) {
