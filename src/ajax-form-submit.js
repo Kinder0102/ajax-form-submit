@@ -626,7 +626,8 @@ export default class AjaxFormSubmit {
     if (!isElement(el))
       return el
     let result
-    const { type, value, checked, files } = el
+    const { value, checked, files } = el
+    const type = this.#datasetHelper.getValue(el, 'type', el.type)
     switch(type) {
       case 'date':
       case 'datetime-local':
