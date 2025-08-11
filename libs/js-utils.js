@@ -171,9 +171,9 @@ export function findObjectValue(obj, key) {
   let currentKey = key
   let exist = false
 
-  if (isArray(obj)) {
-
-  } else if (isNotBlank(key) && isObject(obj)) {
+  if (!isNotBlank(key) && !isObject(obj)) {
+    exist = true
+  } else if (isNotBlank(key)) {
     const keys = split(key, '.')
     keys.forEach(attr => {
       currentKey = attr

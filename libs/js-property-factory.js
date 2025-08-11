@@ -129,7 +129,7 @@ class Comparable {
       if (!prop.includes(operator))
         continue
       
-      const [key, valueStr] = split(prop, operator)
+      const [key, valueStr] = prop.split(operator)
       this.key = key
       this.operator = operator
       if (valueStr === 'true') {
