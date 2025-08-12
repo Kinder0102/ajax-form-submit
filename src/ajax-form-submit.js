@@ -611,7 +611,7 @@ export default class AjaxFormSubmit {
       for (const [name, el] of objectEntries(group)) {
         let value
         if (isArray(el)) {
-          value = toArray(el).map(elem => this.#getElementValue(elem, from, true)).flat().filter(hasValue)
+          value = el.map(elem => this.#getElementValue(elem, from)).flat().filter(hasValue)
           value = elementIs(el[0], HTML_RADIO) ? value[0] : value
         } else {
           value = this.#getElementValue(el, from)
@@ -622,7 +622,7 @@ export default class AjaxFormSubmit {
     return deepFilterArrays(result)
   }
 
-  #getElementValue(el, getFrom, multiple) {
+  #getElementValue(el, getFrom) {
     if (!isElement(el))
       return el
     let result
@@ -637,7 +637,8 @@ export default class AjaxFormSubmit {
       case 'select-multiple':
         return toArray(el.selectedOptions).map(opts => opts.value)
       case HTML_CHECKBOX:
-        result = multiple ? (checked ? value : undefined) : checked
+        result = value !== 'on' && value ? (checked ? value : undefined) : checked
+        // result = checked ? (value !== 'on' && value) || true : (multiple ? undefined : false)
         break
       case HTML_RADIO:
         result = checked ? value : undefined
