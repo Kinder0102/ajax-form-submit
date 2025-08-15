@@ -117,19 +117,15 @@ function handleRedirect({ request, response }, { target, type, param }, { basePa
         location.reload()
       } else {
         const outputObj = isObject(response) ? response : { value: response }
-        url = addBasePath(formatString(formatString(target[0], request), outputObj), basePath)
-        let params = new URLSearchParams()
         param?.forEach?.(key => {
           const inputValue = findObjectValue(request, key)
           const outputValue = findObjectValue(outputObj, key)
-          inputValue.exist && params.set(key, inputValue.value)
-          outputValue.exist && params.set(key, outputValue.value)
+          if (inputValue.exist)
+            url = formatString(url, {[key]: inputValue.value})
+          if (outputValue.exist)
+            url = formatString(url, {[key]: outputValue.value})
         })
-
-        if (params.size > 0)
-          url += `?${params.toString()}`
-
-        location.href = url
+        location.href = addBasePath(url, basePath)
       }
   }
 }
