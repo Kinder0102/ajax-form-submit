@@ -127,10 +127,10 @@ class ScrollMode {
     if (this.#loading)
       return
     const { currentPage, totalPage, size } = this.#pageStat
-    if (currentPage > totalPage)
+    if (currentPage >= totalPage)
       return
     this.#loading = true
-    this.#callback(currentPage + 1, size, [ 'append' ])
+    this.#callback(currentPage + 1, size, [ 'append', 'querystring' ])
   }
 
   #isReachThreshold(container) {
