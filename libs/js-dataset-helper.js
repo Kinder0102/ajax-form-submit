@@ -1,5 +1,5 @@
 import { STRING_NON_BLANK, HTML_ELEMENT } from '#libs/js-constant'
-import { assert, isNotBlank, isElement, objectKeys } from '#libs/js-utils'
+import { assert, hasValue, isNotBlank, isElement, objectKeys } from '#libs/js-utils'
 
 export function createDatasetHelper(prefix = '') {
   const prefixStr = isNotBlank(prefix) ? prefix : ''
@@ -40,8 +40,9 @@ export function createDatasetHelper(prefix = '') {
     })
   }
   const getValue = (el, key, defaultValue) => {
-    assert(isElement(el), 1, HTML_ELEMENT)
-    return el.dataset?.[keyToDatasetName(key)] || defaultValue
+    if (!hasValue(defaultValue))
+      assert(isElement(el), 1, HTML_ELEMENT)
+    return el?.dataset?.[keyToDatasetName(key)] || defaultValue
   }
   const setValue = (el, key, value) => {
     assert(isElement(el), 1, HTML_ELEMENT)

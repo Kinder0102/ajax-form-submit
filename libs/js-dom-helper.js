@@ -8,6 +8,7 @@ import {
   isArray,
   isObject,
   isElement,
+  objectEntries,
   valueToString,
   stringToValue,
   split,
@@ -16,6 +17,8 @@ import {
   formatNumber,
   formatString,
   formatDate,
+  startsWith,
+  endsWith,
   addBasePath,
   toCamelCase
 } from '#libs/js-utils'
@@ -36,13 +39,20 @@ const BASE_PATH = '/'
 const CLASS_NAME = 'dom-helper'
 const CREATE_CLASS_NAME = `${CLASS_NAME}-create`
 const FILLED_CLASS_NAME = `${CLASS_NAME}-filled`
-const INDEX = `${CLASS_NAME}-index`
-const SEQ_NAME = `${CLASS_NAME}-seq`
-const VALUE_NAME = `${CLASS_NAME}-value`
+const SEQ_CLASS_NAME = `${CLASS_NAME}-seq`
 const ATTR_IGNORE_KEYS = [ 'format', 'enum', 'value-type' ]
 const ATTR_BOOLEAN_KEYS = [ 'disabled' ]
+const ATTR_SEQ = 'array-seq'
+const CURRENT_INDEX_KEY = 'current-index'
 const TEMPLATE_KEY = 'template'
+const PARENT_KEY = 'parent'
 const ELEMENT_CACHE = createCache()
+
+let FIND_VALUE_HANDLERS = {
+  value: (value, key) => value,
+  index: (value, key, el, helper) =>
+    split(helper.getValue(el.closest(`.${SEQ_CLASS_NAME}`), ATTR_SEQ, ''))[key.split(PARENT_KEY).length - 1],
+}
 
 let SET_VALUE_HANDLERS = {
   input: (el, value) => el.type === HTML_CHECKBOX ? (el.checked = isTrue(value)) : (el.value = value),
@@ -109,13 +119,14 @@ export default class DOMHelper {
       elements[group] ||= []
       elements[group].forEach(elem => {
         elem?.remove?.()
-        querySelector(`.${FILLED_CLASS_NAME}`, elem, true).forEach(fill => this.#setValue(fill, ''))
+        querySelector(`.${FILLED_CLASS_NAME}`, elem, true)
+          .forEach(fill => this.#setValue(fill, ''))
       })
       elements[group].length = 0
       return elements
     })
     if (group === 'item')
-      this.#datasetHelper.setValue(el, 'array-seq', 0)
+      this.#datasetHelper.setValue(el, CURRENT_INDEX_KEY, 0)
   }
 
   #setValueToElement(el, value) {
@@ -135,7 +146,7 @@ export default class DOMHelper {
       const valueElems = querySelector(`[${keyToAttrName(valueKey)}]`, el, true)
 
       attrElems.forEach(elem => getKeys(elem, attrKey)
-        .filter(({ key }) => !ATTR_IGNORE_KEYS.some(attr => key === attr))
+        .filter(({ key }) => !ATTR_IGNORE_KEYS.some(attr => endsWith(key, attr).exist))
         .forEach(({ key }) => this.#fillElement(elem, value, key, this.#setAttr.bind(this))))
       classElems.forEach(elem => this.#fillElement(elem, value, classKey, this.#setClass.bind(this)))
       valueElems.forEach(elem => this.#fillElement(elem, value, valueKey, this.#setValue.bind(this)))
@@ -144,41 +155,34 @@ export default class DOMHelper {
 
   #setArrayToElement(el, arr, template) {
     const result = []
-    const { getValue, setValue, keyToDatasetName } = this.#datasetHelper
+    const { getValue, setValue } = this.#datasetHelper
     const templateProp = template || getValue(el, TEMPLATE_KEY)
     const valueName = getValue(el, 'array-value')
-    let arraySeq = parseInt(getValue(el, 'array-seq')) || 0
-
-    getArray(arr, getValue(el, 'array-index')).forEach((data, index) => {
-      const objValue = isObject(data) ? data : { [VALUE_NAME]: data }
-      const indexdData = { ...objValue, [INDEX]: index, [SEQ_NAME]: arraySeq }
-      const { value } = findObjectValue(indexdData, valueName)
+    let currentIndex = parseInt(getValue(el, CURRENT_INDEX_KEY)) || 0
+    
+    getArray(arr, getValue(el, 'array-index')).forEach(data => {
+      const { value } = findObjectValue(data, valueName)
+      let child
       if (isArray(value)) {
-        const fragment = document.createDocumentFragment()
-        this.#setArrayToElement(fragment, value, templateProp)
-        el.append(fragment)
-        result.push(fragment)
+        child = document.createDocumentFragment()
+        this.#setArrayToElement(child, value, templateProp)
+      } else if (!hasValue(templateProp) && elementIs(el, [HTML_INPUT, HTML_SELECT])) {
+        el.value = value
       } else {
-        result.push(this.#appendElement(el, value, templateProp))
+        child = createTemplateHandler(templateProp).getTemplate(value)
+        const seqPath = getValue(el.closest(`.${SEQ_CLASS_NAME}`), ATTR_SEQ, '')
+        addClass(child, [CREATE_CLASS_NAME, SEQ_CLASS_NAME])
+        setValue(child, ATTR_SEQ, `${currentIndex++},${seqPath}`)
+        this.setValueToElement(child, value)
+        setValue(el, CURRENT_INDEX_KEY, currentIndex)
       }
-      arraySeq += 1
-      setValue(el, 'array-seq', arraySeq)
-    })
-    return result.filter(isElement)
-  }
 
-  #appendElement(el, data, template) {
-    if (!hasValue(template) && elementIs(el, [HTML_INPUT, HTML_SELECT])) {
-      el.value = data
-    } else {
-      const elem = createTemplateHandler(template).getTemplate(data)
-      this.setValueToElement(elem, data)
-      if (!elem._removed) {
-        addClass(elem, CREATE_CLASS_NAME)
-        el.append(elem)
-        return elem
+      if (isElement(child) && !child._removed) {
+        el.append(child)
+        result.push(child)
       }
-    }
+    })
+    return result
   }
 
   #setDisplay(el, data) {
@@ -197,13 +201,22 @@ export default class DOMHelper {
     })
   }
 
-  #fillElement(el, obj, datasetName, handler) {
+  #fillElement(el, obj, datasetName, fillHandler) {
     const attrValue = this.#datasetHelper.getValue(el, datasetName, '')
     const { value: keys } = createProperty(attrValue)[0]
     const arrayValues = []
     const values = []
+
     keys.forEach(key => {
-      const { exist, value } = findObjectValue(obj, key)
+      const { exist: isStartWith, value: type } = startsWith(key, `${CLASS_NAME}`)
+      const { exist, value } = isStartWith
+        ? (() => {
+            const [_, handler] = objectEntries(FIND_VALUE_HANDLERS).find(([name]) => type.includes(name)) || []
+            const value = handler?.(obj, key, el, this.#datasetHelper)
+            return { exist: hasValue(value), value }
+          })()
+        : findObjectValue(obj, key)
+
       if (!exist) {
       } else if (isArray(value)) {
         arrayValues.push(value)
@@ -211,7 +224,7 @@ export default class DOMHelper {
         values.push(valueToString(value))
       }
     })
-    handler(el, values, arrayValues, datasetName)
+    fillHandler(el, values, arrayValues, datasetName)
   }
 
   #setClass(el, value, arrayValues) {
