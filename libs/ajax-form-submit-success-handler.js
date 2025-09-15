@@ -133,10 +133,10 @@ function handleRedirect({ request, response }, { target, type, param }, { basePa
 function handleDisplay() {
   const group = 'skeleton'
   return {
-    before: (_, { target }, opts) => {
-      getTargets(target, opts.root).forEach(el => {
-        const props = createProperty(opts.datasetHelper.getValue(el, 'template'))[0]
-        !opts.with?.includes('append') && !isTrue(props.append?.[0]) && opts.domHelper.clearElement(el)
+    before: (_, { target }, { root, domHelper, datasetHelper, ...others }) => {
+      getTargets(target, root).forEach(el => {
+        const props = createProperty(datasetHelper.getValue(el, 'template'))[0]
+        !others.with?.includes('append') && !isTrue(props.append?.[0]) && domHelper.clearElement(el)
       })
     },
     request: ({ request }, { target }, { root, domHelper, datasetHelper }) => {

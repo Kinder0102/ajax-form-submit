@@ -39,6 +39,7 @@ const BASE_PATH = '/'
 const CLASS_NAME = 'dom-helper'
 const CREATE_CLASS_NAME = `${CLASS_NAME}-create`
 const FILLED_CLASS_NAME = `${CLASS_NAME}-filled`
+const REMOVE_CLASS_NAME = `${CLASS_NAME}-remove`
 const SEQ_CLASS_NAME = `${CLASS_NAME}-seq`
 const ATTR_IGNORE_KEYS = [ 'format', 'enum', 'value-type' ]
 const ATTR_BOOLEAN_KEYS = [ 'disabled' ]
@@ -115,12 +116,12 @@ export default class DOMHelper {
 
   clearElement(el, group = 'item') {
     assert(isElement(el), 1, HTML_ELEMENT)
+    querySelector(`.${REMOVE_CLASS_NAME}`, el, true).forEach(elem => elem.remove())
     ELEMENT_CACHE.set(el, (elements = {}) => {
       elements[group] ||= []
       elements[group].forEach(elem => {
         elem?.remove?.()
-        querySelector(`.${FILLED_CLASS_NAME}`, elem, true)
-          .forEach(fill => this.#setValue(fill, ''))
+        querySelector(`.${FILLED_CLASS_NAME}`, elem, true).forEach(fill => this.#setValue(fill, ''))
       })
       elements[group].length = 0
       return elements
