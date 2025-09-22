@@ -240,7 +240,7 @@ export function addBasePath(url, basePath) {
   if (!isNotBlank(basePath) || (basePath === '/') || url.includes(basePath))
     return url
 
-  return basePath + url
+  return (basePath + url).replace('//', '/')
 }
 
 export function delay(time) {

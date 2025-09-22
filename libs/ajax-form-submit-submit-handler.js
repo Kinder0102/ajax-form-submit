@@ -41,7 +41,7 @@ export default class AjaxFormSubmitSubmitHandler {
 }
 
 function handleBypass(opts, input) {
-  return { data: input.item || input }
+  return { data: input?.item || input }
 }
 
 function handleMock(opts, input) {
