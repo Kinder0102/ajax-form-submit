@@ -42,7 +42,7 @@ const FILLED_CLASS_NAME = `${CLASS_NAME}-filled`
 const REMOVE_CLASS_NAME = `${CLASS_NAME}-remove`
 const SEQ_CLASS_NAME = `${CLASS_NAME}-seq`
 const ATTR_IGNORE_KEYS = [ 'format', 'enum', 'value-type' ]
-const ATTR_BOOLEAN_KEYS = [ 'disabled' ]
+const ATTR_BOOLEAN_KEYS = [ 'disabled', 'readonly', 'required', 'checked', 'multiple', 'autofocus' ]
 const ATTR_SEQ = 'array-seq'
 const CURRENT_INDEX_KEY = 'current-index'
 const TEMPLATE_KEY = 'template'
@@ -229,27 +229,22 @@ export default class DOMHelper {
   }
 
   #setClass(el, value, arrayValues) {
-    const { getValue } = this.#datasetHelper
-    const valueFormat = this.#generateValue(value, {
-      format: getValue(el, `class-format`),
-      enums: getValue(el, 'class-enum')
-    })
-    split(valueFormat).filter(isNotBlank).forEach(value => addClass(el, value))
+    split(this.#generateValue(value, el, 'class'))
+      .filter(isNotBlank)
+      .forEach(value => addClass(el, value))
   }
 
   #setAttr(el, value, arrayValues, attrName) {
     let tag = attrName.replace('attr-', '')
-    const { getValue } = this.#datasetHelper
-    const valueFormat = this.#generateValue(value, {
-      format: getValue(el, `attr-${tag}-format`),
-      valueType: getValue(el, `attr-${tag}-type`),
-      valueTypeFormat: getValue(el, `attr-${tag}-type-format`),
-      enums: getValue(el, `attr-${tag}-enum`)
-    })
+    const valueFormat = this.#generateValue(value, el, attrName)
 
     if (hasValue(valueFormat)) {
       !tag.includes('data-') && (tag = toCamelCase(tag))
-      el.setAttribute(tag, ATTR_BOOLEAN_KEYS.includes(tag) ? isTrue(valueFormat) : valueFormat)
+      if (ATTR_BOOLEAN_KEYS.includes(tag)) {
+        isTrue(valueFormat) ? el.setAttribute(tag, true) : el.removeAttribute(tag)
+      } else {
+        el.setAttribute(tag, valueFormat)
+      }
     }
   }
 
@@ -258,22 +253,21 @@ export default class DOMHelper {
       arrayValues.forEach(value => this.#setArrayToElement(el, value))
     } else {
       addClass(el, FILLED_CLASS_NAME)
-      const { getValue } = this.#datasetHelper
-      const valueFormat = this.#generateValue(value, {
-        format: getValue(el, 'value-format'),
-        valueType: getValue(el, 'value-type'),
-        valueTypeFormat: getValue(el, 'value-type-format'),
-        enums: getValue(el, 'value-enum')
-      })
-
-      if (!hasValue(valueFormat))
-        return
+      const valueFormat = this.#generateValue(value, el, 'value')
       const handler = SET_VALUE_HANDLERS[el.tagName?.toLowerCase()] || SET_VALUE_HANDLERS.fallback
-      handler(el, valueFormat, { basePath: this.#basePath })
+      if (hasValue(valueFormat))
+        handler(el, valueFormat, { basePath: this.#basePath })
     }
   }
 
-  #generateValue(value, { valueType = 'string', ...props }) {
+  #generateValue(value, el, tag) {
+    const { getValue } = this.#datasetHelper
+    const valueType = getValue(el, `${tag}-type`, 'string')
+    const props = {
+      format: getValue(el, `${tag}-format`),
+      valueTypeFormat: getValue(el, `${tag}-type-format`),
+      enums: getValue(el, `${tag}-enum`)
+    }
     const values = toArray(value)
     const handler = GENERATE_VALUE_HANDLERS[valueType] || GENERATE_VALUE_HANDLERS.fallback
     return values.length === 0 ? null : handler(values, props)
