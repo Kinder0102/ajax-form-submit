@@ -35,11 +35,11 @@ import { createDatasetHelper } from '#libs/js-dataset-helper'
 import { createProperty, createFilter, createTemplateHandler } from '#libs/js-property-factory'
 import { createCache } from '#libs/js-cache'
 
-const BASE_PATH = '/'
 const CLASS_NAME = 'dom-helper'
 const CREATE_CLASS_NAME = `${CLASS_NAME}-create`
 const FILLED_CLASS_NAME = `${CLASS_NAME}-filled`
 const REMOVE_CLASS_NAME = `${CLASS_NAME}-remove`
+const LAST_CLASS_NAME = `${CLASS_NAME}-last`
 const SEQ_CLASS_NAME = `${CLASS_NAME}-seq`
 const ATTR_IGNORE_KEYS = [ 'format', 'enum', 'value-type' ]
 const ATTR_BOOLEAN_KEYS = [ 'disabled', 'readonly', 'required', 'checked', 'multiple', 'autofocus' ]
@@ -88,7 +88,7 @@ export default class DOMHelper {
 
   constructor(opts = {}) {
     this.#prefix = opts.prefix
-    this.#basePath = opts.basePath || BASE_PATH
+    this.#basePath = opts.basePath || '/'
     this.#datasetHelper = createDatasetHelper(opts.prefix)
   }
 
@@ -179,7 +179,8 @@ export default class DOMHelper {
       }
 
       if (isElement(child) && !child._removed) {
-        el.append(child)
+        const lastItem = querySelector(`.${LAST_CLASS_NAME}`, el)[0]
+        isElement(lastItem) ? lastItem.before(child) : el.append(child)
         result.push(child)
       }
     })
