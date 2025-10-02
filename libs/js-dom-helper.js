@@ -135,23 +135,19 @@ export default class DOMHelper {
       return
 
     this.#setDisplay(el, value)
-    if (!isObject(value)) {
-      this.#setValue(el, value)
-    } else {
-      const { getKeys, keyToAttrName } = this.#datasetHelper
-      const attrKey = 'attr'
-      const attrElems = querySelector('*', el, true)
-      const classKey = 'class'
-      const classElems = querySelector(`[${keyToAttrName(classKey)}]`, el, true)
-      const valueKey = 'value'
-      const valueElems = querySelector(`[${keyToAttrName(valueKey)}]`, el, true)
+    const { getKeys, keyToAttrName } = this.#datasetHelper
+    const attrKey = 'attr'
+    const attrElems = querySelector('*', el, true)
+    const classKey = 'class'
+    const classElems = querySelector(`[${keyToAttrName(classKey)}]`, el, true)
+    const valueKey = 'value'
+    const valueElems = querySelector(`[${keyToAttrName(valueKey)}]`, el, true)
 
-      attrElems.forEach(elem => getKeys(elem, attrKey)
-        .filter(({ key }) => !ATTR_IGNORE_KEYS.some(attr => endsWith(key, attr).exist))
-        .forEach(({ key }) => this.#fillElement(elem, value, key, this.#setAttr.bind(this))))
-      classElems.forEach(elem => this.#fillElement(elem, value, classKey, this.#setClass.bind(this)))
-      valueElems.forEach(elem => this.#fillElement(elem, value, valueKey, this.#setValue.bind(this)))
-    }
+    attrElems.forEach(elem => getKeys(elem, attrKey)
+      .filter(({ key }) => !ATTR_IGNORE_KEYS.some(attr => endsWith(key, attr).exist))
+      .forEach(({ key }) => this.#fillElement(elem, value, key, this.#setAttr.bind(this))))
+    classElems.forEach(elem => this.#fillElement(elem, value, classKey, this.#setClass.bind(this)))
+    valueElems.forEach(elem => this.#fillElement(elem, value, valueKey, this.#setValue.bind(this)))
   }
 
   #setArrayToElement(el, arr, template) {
