@@ -16,7 +16,7 @@ export function createDatasetHelper(prefix = '') {
   }
   const keyToDatasetName = key => {
     assert(isNotBlank(key), 1, STRING_NON_BLANK)
-    return prefixStr + key
+    return prefixStr + key.replace(`data-${prefixConcat}`, '')
       .replace(regex, group => group.toUpperCase())
       .replaceAll('-', '')
   }

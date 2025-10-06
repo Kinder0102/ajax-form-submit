@@ -201,7 +201,7 @@ export default class DOMHelper {
 
   #fillElement(el, obj, datasetName, fillHandler) {
     const attrValue = this.#datasetHelper.getValue(el, datasetName, '')
-    const { value: keys } = createProperty(attrValue)[0]
+    const { value: keys, name: attr } = createProperty(attrValue)[0]
     const arrayValues = []
     const values = []
 
@@ -222,7 +222,7 @@ export default class DOMHelper {
         values.push(valueToString(value))
       }
     })
-    fillHandler(el, values, arrayValues, datasetName)
+    fillHandler(el, values, arrayValues, attr?.[0] ?? datasetName)
   }
 
   #setClass(el, value, arrayValues) {
