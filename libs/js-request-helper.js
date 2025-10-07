@@ -13,7 +13,7 @@ const WITH_DATA_METHOD = [ 'POST', 'PUT', 'PATCH' ]
 export default { request }
 
 function request(opts, input, requestParams) {
-  const { basePath, handleProgress, createResponse, signal } = opts
+  const { basePath, handleProgress, abort } = opts
   const { formData, hasFile } = objectToFormData(input)
   const { method = 'POST', url, csrf, headers = {}, enctype = '' } = requestParams
   const isWithDataMethod = WITH_DATA_METHOD.includes(method.toUpperCase())
@@ -45,7 +45,7 @@ function request(opts, input, requestParams) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open(method, processedUrl, true)
-    signal?.addEventListener('abort', () => xhr.abort(), { once: true })
+    abort?.signal?.addEventListener('abort', () => xhr.abort(), { once: true })
     xhr.onabort = () => reject(new DOMException('Operation aborted', 'AbortError'))
     
     xhr.upload.addEventListener('progress', handleProgress)
@@ -56,7 +56,7 @@ function request(opts, input, requestParams) {
       if (status >= 200 && status < 300) {
         if (responseURL && responseURL !== new URL(processedUrl, location.href).href) {
           location.href = responseURL
-          resolve(createResponse())
+          abort?.abort()
         } else {
           resolve(JSON.parse(xhr.responseText))
         }

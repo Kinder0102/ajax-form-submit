@@ -308,13 +308,13 @@ export function throttle(callback, wait = 200, { leading = true, trailing = true
   }
 }
 
-export function abortable(promiseFn, { signal } = {}) {
-  if (signal?.aborted)
+export function abortable(promiseFn, { abort } = {}) {
+  if (abort?.signal?.aborted)
     return Promise.reject(new DOMException('Operation aborted', 'AbortError'))
 
   const originalPromise = promiseFn()
   const abortPromise = new Promise((_, reject) => {
-    signal?.addEventListener('abort', () => {
+    abort?.signal?.addEventListener('abort', () => {
       reject(new DOMException('Operation aborted', 'AbortError'))
     }, { once: true })
   })

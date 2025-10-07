@@ -194,7 +194,7 @@ export default class AjaxFormSubmit {
   submit(opts = {}) {
     const { data, ...options } = { ...opts, ...this.#generateDataAndProps(opts.with)}
     this.#abortController = new AbortController()
-    options.signal = this.#abortController.signal
+    options.abort = this.#abortController
     options.id = crypto?.randomUUID?.();
 
     return this.#handleBefore(data, options)
@@ -546,7 +546,7 @@ export default class AjaxFormSubmit {
     const props = this.#datasetHelper.getValue(this.#root, attrName, middleware)
     return AjaxFormSubmit.middleware.create(props, {
       root: this.#root,
-      signal: opts.signal
+      abort: opts.abort
     })
   }
 
